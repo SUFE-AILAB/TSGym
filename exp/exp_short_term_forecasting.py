@@ -67,6 +67,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         criterion = self._select_criterion(self.args.loss)
         mse = nn.MSELoss()
 
+        epoch_time_avg = []
         for epoch in range(self.args.train_epochs):
             iter_count = 0
             train_loss = []
@@ -108,6 +109,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                 loss.backward()
                 model_optim.step()
 
+            epoch_time_avg.append(time.time() - epoch_time)
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
             vali_loss = self.vali(train_loader, vali_loader, criterion)
@@ -120,6 +122,8 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                 break
 
             adjust_learning_rate(model_optim, epoch + 1, self.args)
+
+        np.savez_compressed(f'./test_results/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz', time=np.mean(epoch_time_avg))
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
@@ -232,7 +236,8 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             print('owa:', owa_results)
 
             # save results
-            np.savez_compressed(f'./test_results/{self.args.model}.npz', smape=smape_results, mape=mape, mase=mase, owa=owa_results)
+            np.savez_compressed(f'./test_results/{self.args.data}_{self.args.model}.npz',
+                                 smape=smape_results, mape=mape, mase=mase, owa=owa_results)
 
         else:
             print('After all 6 tasks are finished, you can calculate the averaged index')

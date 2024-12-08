@@ -165,7 +165,7 @@ class Model(nn.Module):
         zeros = torch.zeros([x_dec.shape[0], self.pred_len, x_dec.shape[2]], device=x_enc.device)
         seasonal_init_dec = torch.cat([seasonal_init_enc[:, -self.seq_len:, :], zeros], dim=1)
         dec_out = self.dec_embedding(seasonal_init_dec, x_mark_dec)
-        dec_out = self.conv_trans(dec_out)
+        dec_out = self.conv_trans.to(dec_out.device)(dec_out)
         dec_out = dec_out[:, -self.pred_len:, :] + trend[:, -self.pred_len:, :]
         return dec_out
 
@@ -175,7 +175,7 @@ class Model(nn.Module):
 
         # embedding
         dec_out = self.dec_embedding(seasonal_init_enc, x_mark_dec)
-        dec_out = self.conv_trans(dec_out)
+        dec_out = self.conv_trans.to(dec_out.device)(dec_out)
         dec_out = dec_out + trend
         return dec_out
 
@@ -185,7 +185,7 @@ class Model(nn.Module):
 
         # embedding
         dec_out = self.dec_embedding(seasonal_init_enc, None)
-        dec_out = self.conv_trans(dec_out)
+        dec_out = self.conv_trans.to(dec_out.device)(dec_out)
         dec_out = dec_out + trend
         return dec_out
 
@@ -194,7 +194,7 @@ class Model(nn.Module):
         seasonal_init_enc, trend = self.decomp_multi(x_enc)
         # embedding
         dec_out = self.dec_embedding(seasonal_init_enc, None)
-        dec_out = self.conv_trans(dec_out)
+        dec_out = self.conv_trans.to(dec_out.device)(dec_out)
         dec_out = dec_out + trend
 
         # Output from Non-stationary Transformer

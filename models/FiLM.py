@@ -5,9 +5,6 @@ import numpy as np
 from scipy import signal
 from scipy import special as ss
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-
 def transition(N):
     Q = np.arange(N, dtype=np.float64)
     R = (2 * Q + 1)[:, None]  # / theta
@@ -16,9 +13,8 @@ def transition(N):
     B = (-1.) ** Q[:, None] * R
     return A, B
 
-
 class HiPPO_LegT(nn.Module):
-    def __init__(self, N, dt=1.0, discretization='bilinear'):
+    def __init__(self, N, dt=1.0, discretization='bilinear', device='cpu'):
         """
         N: the order of the HiPPO projection
         dt: discretization step size - should be roughly inverse to the length of the sequence
@@ -43,7 +39,7 @@ class HiPPO_LegT(nn.Module):
         inputs : (length, ...)
         output : (length, ..., N) where N is the order of the HiPPO projection
         """
-        c = torch.zeros(inputs.shape[:-1] + tuple([self.N])).to(device)
+        c = torch.zeros(inputs.shape[:-1] + tuple([self.N])).to(inputs.device)
         cs = []
         for f in inputs.permute([-1, 0, 1]):
             f = f.unsqueeze(-1)
@@ -129,6 +125,7 @@ class Model(nn.Module):
             self.projection = nn.Linear(
                 configs.enc_in * configs.seq_len, configs.num_class)
 
+    # todo: 模型初始化的时候to device
     def forecast(self, x_enc, x_mark_enc, x_dec_true, x_mark_dec):
         # Normalization from Non-stationary Transformer
         means = x_enc.mean(1, keepdim=True).detach()
@@ -142,7 +139,7 @@ class Model(nn.Module):
         for i in range(0, len(self.multiscale) * len(self.window_size)):
             x_in_len = self.multiscale[i % len(self.multiscale)] * self.pred_len
             x_in = x_enc[:, -x_in_len:]
-            legt = self.legts[i]
+            legt = self.legts[i].to(x_in.device)
             x_in_c = legt(x_in.transpose(1, 2)).permute([1, 2, 3, 0])[:, :, :, jump_dist:]
             out1 = self.spec_conv_1[i](x_in_c)
             if self.seq_len >= self.pred_len:
