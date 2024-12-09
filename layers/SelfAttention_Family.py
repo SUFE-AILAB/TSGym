@@ -44,7 +44,7 @@ class DSAttention(nn.Module):
         else:
             return V.contiguous(), None
 
-
+# todo: factor?
 class FullAttention(nn.Module):
     def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
         super(FullAttention, self).__init__()

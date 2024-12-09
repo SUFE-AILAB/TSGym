@@ -1,5 +1,5 @@
 
-model_name=FiLM
+model_name=TransformerGym
 python3 -m debugpy --listen localhost:8888 --wait-for-client \
         run.py \
   --task_name short_term_forecast \

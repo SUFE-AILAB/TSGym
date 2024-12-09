@@ -4,6 +4,8 @@ from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer,
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer
 
+from models import TransformerGym
+
 
 class Exp_Basic(object):
     def __init__(self, args):
@@ -35,7 +37,8 @@ class Exp_Basic(object):
             'TemporalFusionTransformer': TemporalFusionTransformer,
             "SCINet": SCINet,
             'PAttn': PAttn,
-            'TimeXer': TimeXer
+            'TimeXer': TimeXer,
+            'TransformerGym': TransformerGym,
         }
         if args.model == 'Mamba':
             print('Please make sure you have successfully installed mamba_ssm')
@@ -44,10 +47,19 @@ class Exp_Basic(object):
 
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
+        self._model_configuration()
 
     def _build_model(self):
         raise NotImplementedError
         return None
+    
+    def _model_configuration(self):
+        print(f'Model Architecture: {self.model}')
+        num_params = sum(p.numel() for p in self.model.parameters())
+        print(f'Number of Model Parameters: {num_params}')
+
+        for name, param in self.model.named_parameters():
+            print(f"Parameter {name} is frozen: {not param.requires_grad}")
 
     def _acquire_device(self):
         if self.args.use_gpu:
