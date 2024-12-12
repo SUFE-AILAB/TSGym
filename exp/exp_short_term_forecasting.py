@@ -29,9 +29,18 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
         if 'Gym' not in self.args.model:
             model = self.model_dict[self.args.model].Model(self.args).float()
+            self.save_suffix = ''
         else:
-            model_name, norm_gym, input_embed_gym, attn_gym = self.args.model.split('_')
-            model = self.model_dict[model_name].Model(self.args, norm_gym=norm_gym, input_embed_gym=input_embed_gym, attn_gym=attn_gym).float()
+            model_name, gym_series_norm, gym_series_decomp, gym_input_embed,\
+                  gym_network_architecture, gym_attn, gym_encoder_only = self.args.model.split('_')
+            model = self.model_dict[model_name].Model(self.args,
+                                                      gym_series_norm=gym_series_norm,
+                                                      gym_series_decomp=gym_series_decomp,
+                                                      gym_input_embed=gym_input_embed,
+                                                      gym_network_architecture=gym_network_architecture,
+                                                      gym_attn=gym_attn,
+                                                      gym_encoder_only=gym_encoder_only).float()
+            self.save_suffix = 'Gym'
 
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
@@ -59,7 +68,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         train_data, train_loader = self._get_data(flag='train')
         vali_data, vali_loader = self._get_data(flag='val')
 
-        path = os.path.join(self.args.checkpoints, setting)
+        path = os.path.join(f'{self.args.checkpoints}{self.save_suffix}/', setting)
         if not os.path.exists(path):
             os.makedirs(path)
 
@@ -72,66 +81,74 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         criterion = self._select_criterion(self.args.loss)
         mse = nn.MSELoss()
 
-        epoch_time_avg = []
-        for epoch in range(self.args.train_epochs):
-            iter_count = 0
-            train_loss = []
-
-            self.model.train()
-            epoch_time = time.time()
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
-                iter_count += 1
-                model_optim.zero_grad()
-                batch_x = batch_x.float().to(self.device)
-
-                batch_y = batch_y.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
-
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
-
-                outputs = self.model(batch_x, None, dec_inp, None)
-
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-
-                batch_y_mark = batch_y_mark[:, -self.args.pred_len:, f_dim:].to(self.device)
-                loss_value = criterion(batch_x, self.args.frequency_map, outputs, batch_y, batch_y_mark)
-                loss_sharpness = mse((outputs[:, 1:, :] - outputs[:, :-1, :]), (batch_y[:, 1:, :] - batch_y[:, :-1, :]))
-                loss = loss_value  # + loss_sharpness * 1e-5
-                train_loss.append(loss.item())
-
-                if (i + 1) % 100 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                    speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                    iter_count = 0
-                    time_now = time.time()
-
-                loss.backward()
-                model_optim.step()
-
-            epoch_time_avg.append(time.time() - epoch_time)
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-            train_loss = np.average(train_loss)
-            vali_loss = self.vali(train_loader, vali_loader, criterion)
-            test_loss = vali_loss
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            early_stopping(vali_loss, self.model, path)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
-
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
-
-        np.savez_compressed(f'./test_results/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz', time=np.mean(epoch_time_avg))
-
         best_model_path = path + '/' + 'checkpoint.pth'
-        self.model.load_state_dict(torch.load(best_model_path))
+        if os.path.exists(best_model_path):
+            print(f'The model file already exists! loading...')
+            self.model.load_state_dict(torch.load(best_model_path))
+        else:
+            epoch_time_avg = []
+            for epoch in range(self.args.train_epochs):
+                iter_count = 0
+                train_loss = []
+
+                self.model.train()
+                epoch_time = time.time()
+                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+                    iter_count += 1
+                    model_optim.zero_grad()
+                    batch_x = batch_x.float().to(self.device)
+
+                    batch_y = batch_y.float().to(self.device)
+                    batch_y_mark = batch_y_mark.float().to(self.device)
+
+                    # decoder input
+                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+
+                    outputs = self.model(batch_x, None, dec_inp, None)
+
+                    f_dim = -1 if self.args.features == 'MS' else 0
+                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+
+                    batch_y_mark = batch_y_mark[:, -self.args.pred_len:, f_dim:].to(self.device)
+                    loss_value = criterion(batch_x, self.args.frequency_map, outputs, batch_y, batch_y_mark)
+                    loss_sharpness = mse((outputs[:, 1:, :] - outputs[:, :-1, :]), (batch_y[:, 1:, :] - batch_y[:, :-1, :]))
+                    loss = loss_value  # + loss_sharpness * 1e-5
+
+                    train_loss.append(loss.item())
+
+                    if (i + 1) % 100 == 0:
+                        print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                        speed = (time.time() - time_now) / iter_count
+                        left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
+                        print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                        iter_count = 0
+                        time_now = time.time()
+
+                    loss.backward()
+                    model_optim.step()
+
+                epoch_time_avg.append(time.time() - epoch_time)
+                print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+                train_loss = np.average(train_loss)
+                vali_loss = self.vali(train_loader, vali_loader, criterion)
+                test_loss = vali_loss
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+                early_stopping(vali_loss, self.model, path)
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break
+
+                adjust_learning_rate(model_optim, epoch + 1, self.args)
+
+            # recording training computational cost
+            np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz',
+                                time=np.mean(epoch_time_avg))
+
+
+            self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
 
@@ -176,9 +193,9 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+            self.model.load_state_dict(torch.load(os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')))
 
-        folder_path = './test_results/' + setting + '/'
+        folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
@@ -214,7 +231,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         print('test shape:', preds.shape)
 
         # result save
-        folder_path = './m4_results/' + self.args.model + '/'
+        folder_path = f'./m4_results{self.save_suffix}/' + self.args.model + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
@@ -225,7 +242,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         forecasts_df.to_csv(folder_path + self.args.seasonal_patterns + '_forecast.csv')
 
         print(self.args.model)
-        file_path = './m4_results/' + self.args.model + '/'
+        file_path = f'./m4_results{self.save_suffix}/' + self.args.model + '/'
         if 'Weekly_forecast.csv' in os.listdir(file_path) \
                 and 'Monthly_forecast.csv' in os.listdir(file_path) \
                 and 'Yearly_forecast.csv' in os.listdir(file_path) \
@@ -241,7 +258,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             print('owa:', owa_results)
 
             # save results
-            np.savez_compressed(f'./test_results/{self.args.data}_{self.args.model}.npz',
+            np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.model}.npz',
                                  smape=smape_results, mape=mape, mase=mase, owa=owa_results)
 
         else:

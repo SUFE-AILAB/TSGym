@@ -1,4 +1,4 @@
-model_name=TransformerGym_None_series-patching_destationary-attention
+model_name=TSGym_RevIN_True_positional-encoding_Transformer_sparse-attention_True
 python3 -u run.py \
   --task_name short_term_forecast \
   --is_training 1 \

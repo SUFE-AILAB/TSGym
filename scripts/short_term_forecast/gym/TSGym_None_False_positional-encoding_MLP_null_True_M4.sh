@@ -1,4 +1,4 @@
-model_name=TransformerGym_None_positional-encoding_self-attention
+model_name=TSGym_None_False_positional-encoding_MLP_null_True
 python3 -u run.py \
   --task_name short_term_forecast \
   --is_training 1 \

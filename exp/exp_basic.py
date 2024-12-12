@@ -4,7 +4,7 @@ from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer,
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer
 
-from models import TransformerGym
+from models import TSGym
 
 
 class Exp_Basic(object):
@@ -38,7 +38,7 @@ class Exp_Basic(object):
             "SCINet": SCINet,
             'PAttn': PAttn,
             'TimeXer': TimeXer,
-            'TransformerGym': TransformerGym,
+            'TSGym': TSGym,
         }
         if args.model == 'Mamba':
             print('Please make sure you have successfully installed mamba_ssm')
