@@ -30,7 +30,10 @@
 - 20241211: TransformerGym_None_series-patching_sparse-attention, loss全是0? (nan)
 
 
-## 
+## Experiment Results
+![alt text](image.png)
+
+OWA:
 |                              |   Yearly |   Quarterly |   Monthly |   Others |   Average |   time_Hourly |   time_Daily |   time_Weekly |   time_Monthly |   time_Quarterly |   time_Yearly |
 |:-----------------------------|---------:|------------:|----------:|---------:|----------:|--------------:|-------------:|--------------:|---------------:|-----------------:|--------------:|
 | m4_TimesNet                  |    0.785 |       0.885 |     0.883 |    1.052 |     0.852 |      10.7905  |     82.8676  |      11.2696  |       1338.95  |         435.905  |      403.722  |
