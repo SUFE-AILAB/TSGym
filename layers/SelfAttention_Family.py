@@ -11,7 +11,7 @@ import math
 class DSAttention(nn.Module):
     '''De-stationary Attention'''
 
-    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
+    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False, configs=None):
         super(DSAttention, self).__init__()
         self.scale = scale
         self.mask_flag = mask_flag
@@ -47,7 +47,7 @@ class DSAttention(nn.Module):
 
 # todo: factor?
 class FullAttention(nn.Module):
-    def __init__(self, configs=None, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
+    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False, configs=None):
         super(FullAttention, self).__init__()
         self.scale = scale
         self.mask_flag = mask_flag
@@ -77,7 +77,7 @@ class FullAttention(nn.Module):
 
 
 class ProbAttention(nn.Module):
-    def __init__(self, configs=None, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
+    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False, configs=None):
         super(ProbAttention, self).__init__()
         self.factor = factor
         self.scale = scale
@@ -508,7 +508,7 @@ class AutoCorrelation(nn.Module):
     This block can replace the self-attention family mechanism seamlessly.
     """
 
-    def __init__(self, configs=None, mask_flag=True, factor=1, scale=None, attention_dropout=0.1, output_attention=False):
+    def __init__(self, mask_flag=True, factor=1, scale=None, attention_dropout=0.1, output_attention=False, configs=None):
         super(AutoCorrelation, self).__init__()
         self.factor = factor
         self.scale = scale

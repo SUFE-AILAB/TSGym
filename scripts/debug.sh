@@ -23,7 +23,7 @@
 #   --learning_rate 0.001 \
 #   --loss 'SMAPE'
 
-model_name=TransformerGym_None_series-patching_sparse-attention
+model_name=Transformer
 python3 -m debugpy --listen localhost:8888 --wait-for-client \
         run.py \
   --task_name short_term_forecast \
