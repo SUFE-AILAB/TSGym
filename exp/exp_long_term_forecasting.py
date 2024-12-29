@@ -24,11 +24,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             model = self.model_dict[self.args.model].Model(self.args).float()
             self.save_suffix = ''
         else:
-            model_name, gym_series_norm, gym_series_decomp, gym_input_embed,\
-                  gym_network_architecture, gym_attn, gym_encoder_only = self.args.model.split('_')
+            model_name, gym_series_sampling, gym_series_norm, gym_series_decomp, gym_channel_independent, \
+                        gym_input_embed, gym_network_architecture, gym_attn, gym_encoder_only = self.args.model.split('_')
             model = self.model_dict[model_name].Model(self.args,
+                                                      gym_series_sampling=gym_series_sampling,
                                                       gym_series_norm=gym_series_norm,
                                                       gym_series_decomp=gym_series_decomp,
+                                                      gym_channel_independent=gym_channel_independent,
                                                       gym_input_embed=gym_input_embed,
                                                       gym_network_architecture=gym_network_architecture,
                                                       gym_attn=gym_attn,
