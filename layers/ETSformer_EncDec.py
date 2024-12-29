@@ -152,8 +152,8 @@ class FourierLayer(nn.Module):
             f = fft.rfftfreq(t)[self.low_freq:]
 
         x_freq, index_tuple = self.topk_freq(x_freq)
-        f = repeat(f, 'f -> b f d', b=x_freq.size(0), d=x_freq.size(2))
-        f = rearrange(f[index_tuple], 'b f d -> b f () d').to(x_freq.device)
+        f = repeat(f, 'f -> b f d', b=x_freq.size(0), d=x_freq.size(2)).to(x_freq.device)
+        f = rearrange(f[index_tuple], 'b f d -> b f () d')
 
         return self.extrapolate(x_freq, f, t)
 

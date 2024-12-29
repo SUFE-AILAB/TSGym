@@ -20,10 +20,23 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         super(Exp_Long_Term_Forecast, self).__init__(args)
 
     def _build_model(self):
-        model = self.model_dict[self.args.model].Model(self.args).float()
+        if 'Gym' not in self.args.model:
+            model = self.model_dict[self.args.model].Model(self.args).float()
+            self.save_suffix = ''
+        else:
+            model_name, gym_series_norm, gym_series_decomp, gym_input_embed,\
+                  gym_network_architecture, gym_attn, gym_encoder_only = self.args.model.split('_')
+            model = self.model_dict[model_name].Model(self.args,
+                                                      gym_series_norm=gym_series_norm,
+                                                      gym_series_decomp=gym_series_decomp,
+                                                      gym_input_embed=gym_input_embed,
+                                                      gym_network_architecture=gym_network_architecture,
+                                                      gym_attn=gym_attn,
+                                                      gym_encoder_only=gym_encoder_only).float()
+            self.save_suffix = 'Gym'
 
         if self.args.use_multi_gpu and self.args.use_gpu:
-            model = nn.DataParallel(model, device_ids=self.args.device_ids)
+            model = nn.DataParallel(model, device_ids=list(range(len(self.args.device_ids))))
         return model
 
     def _get_data(self, flag):
@@ -77,7 +90,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
 
-        path = os.path.join(self.args.checkpoints, setting)
+        path = os.path.join(f'{self.args.checkpoints}{self.save_suffix}/', setting)
         if not os.path.exists(path):
             os.makedirs(path)
 
@@ -92,27 +105,41 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
-        for epoch in range(self.args.train_epochs):
-            iter_count = 0
-            train_loss = []
+        best_model_path = path + '/' + 'checkpoint.pth'
+        if os.path.exists(best_model_path):
+            print(f'The model file already exists! loading...')
+            self.model.load_state_dict(torch.load(best_model_path))
+        else:
+            epoch_time_avg = []
+            for epoch in range(self.args.train_epochs):
+                iter_count = 0
+                train_loss = []
 
-            self.model.train()
-            epoch_time = time.time()
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
-                iter_count += 1
-                model_optim.zero_grad()
-                batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float().to(self.device)
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
+                self.model.train()
+                epoch_time = time.time()
+                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+                    iter_count += 1
+                    model_optim.zero_grad()
+                    batch_x = batch_x.float().to(self.device)
+                    batch_y = batch_y.float().to(self.device)
+                    batch_x_mark = batch_x_mark.float().to(self.device)
+                    batch_y_mark = batch_y_mark.float().to(self.device)
 
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                    # decoder input
+                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
 
-                # encoder - decoder
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
+                    # encoder - decoder
+                    if self.args.use_amp:
+                        with torch.cuda.amp.autocast():
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+
+                            f_dim = -1 if self.args.features == 'MS' else 0
+                            outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                            batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                            loss = criterion(outputs, batch_y)
+                            train_loss.append(loss.item())
+                    else:
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
                         f_dim = -1 if self.args.features == 'MS' else 0
@@ -120,47 +147,43 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
-                else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
-                    f_dim = -1 if self.args.features == 'MS' else 0
-                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                    loss = criterion(outputs, batch_y)
-                    train_loss.append(loss.item())
+                    if (i + 1) % 100 == 0:
+                        print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                        speed = (time.time() - time_now) / iter_count
+                        left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
+                        print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                        iter_count = 0
+                        time_now = time.time()
 
-                if (i + 1) % 100 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                    speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                    iter_count = 0
-                    time_now = time.time()
+                    if self.args.use_amp:
+                        scaler.scale(loss).backward()
+                        scaler.step(model_optim)
+                        scaler.update()
+                    else:
+                        loss.backward()
+                        model_optim.step()
 
-                if self.args.use_amp:
-                    scaler.scale(loss).backward()
-                    scaler.step(model_optim)
-                    scaler.update()
-                else:
-                    loss.backward()
-                    model_optim.step()
+                epoch_time_avg.append(time.time() - epoch_time)
+                print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+                train_loss = np.average(train_loss)
+                vali_loss = self.vali(vali_data, vali_loader, criterion)
+                test_loss = self.vali(test_data, test_loader, criterion)
 
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-            train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+                early_stopping(vali_loss, self.model, path)
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            early_stopping(vali_loss, self.model, path)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
+                adjust_learning_rate(model_optim, epoch + 1, self.args)
 
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
-
-        best_model_path = path + '/' + 'checkpoint.pth'
-        self.model.load_state_dict(torch.load(best_model_path))
+            # recording training computational cost
+            np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz',
+                                time=np.mean(epoch_time_avg))
+            
+            self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
 
@@ -168,11 +191,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         test_data, test_loader = self._get_data(flag='test')
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+            self.model.load_state_dict(torch.load(os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')))
 
-        preds = []
-        trues = []
-        folder_path = './test_results/' + setting + '/'
+        preds, trues = [], []
+        folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
@@ -232,7 +254,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         print('test shape:', preds.shape, trues.shape)
 
         # result save
-        folder_path = './results/' + setting + '/'
+        folder_path = f'./results{self.save_suffix}/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         

@@ -5,8 +5,8 @@ from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLay
 from layers.SelfAttention_Family import FullAttention, ProbAttention, DSAttention, FourierCrossAttention, AutoCorrelation
 from layers.SelfAttention_Family import AttentionLayer
 from layers.Embed import DataEmbedding_wo_pos, DataEmbedding, PatchEmbedding_wo_pos, PatchEmbedding
-from layers.StandardNorm import Normalize
-from layers.Autoformer_EncDec import series_decomp
+from layers.StandardNorm import Normalize, DishTS
+from layers.SeriesDecom import series_decomp, series_decomp_multi, DFT_series_decomp
 import numpy as np
 from copy import deepcopy
 
@@ -53,6 +53,7 @@ class Model(nn.Module):
     def __init__(self, configs,
                   gym_series_norm=None,
                   gym_series_decomp=None,
+                  gym_channel_independent=False,
                   gym_input_embed='series-patching',
                   gym_network_architecture='MLP',
                   gym_attn='sparse-attention',
@@ -63,11 +64,43 @@ class Model(nn.Module):
         self.pred_len = configs.pred_len
 
         self.gym_series_norm = gym_series_norm
-        self.gym_series_decomp = eval(gym_series_decomp) if isinstance(gym_series_decomp, str) else gym_series_decomp
+        self.gym_series_decomp = gym_series_decomp
+        self.gym_channel_independent = eval(gym_channel_independent) if isinstance(gym_channel_independent, str) else gym_channel_independent
         self.gym_input_embed = gym_input_embed
         self.gym_network_architecture = gym_network_architecture
         self.gym_attn = gym_attn
         self.gym_encoder_only = eval(gym_encoder_only) if isinstance(gym_encoder_only, str) else gym_encoder_only
+
+        # pipeline
+        # ↓ series sampling
+        # ↓ series normalization
+            # None
+            # Stat
+            # RevIN
+            # DishTS
+        # ↓ series decomposition
+            # None
+            # Moving Avarage
+            # MoE Moving Average
+            # DFT
+        # ↓ series embedding (tokenization)
+            # channel-dependent
+                # series-encoding
+            # channel-independent
+                # series-encoding
+                # series-patching
+        # ↓ series encoding
+            # MLP
+            # RNN
+            # Transformer
+                # Vanilla Transformer
+                # Informer
+                # Autoformer
+                # FEDformer
+                # ...
+        # ↓ series denormalization
+        #   output
+
 
         # Series Normalization
         if self.gym_series_norm == 'None':
@@ -76,68 +109,95 @@ class Model(nn.Module):
             self.series_norm = Normalize(configs.enc_in, affine=False, non_norm=False)
         elif self.gym_series_norm == 'RevIN':
             self.series_norm = Normalize(configs.enc_in, affine=True, non_norm=False)
+        elif self.gym_series_norm == 'DishTS':
+            self.series_norm = DishTS(configs)
         else:
             raise NotImplementedError
 
         # Series Decomposition
-        print(f'moving avg for series decomposition: {configs.moving_avg}')
-        self.series_decompsition = series_decomp(configs.moving_avg) if self.gym_series_decomp else None
+        print(f'series decomposition: {configs.moving_avg}')
+        if self.gym_series_decomp == 'None':
+            self.series_decompsition = None
+        elif self.gym_series_decomp == 'MA':
+            self.series_decompsition = series_decomp(configs.moving_avg)
+        elif self.gym_series_decomp == 'MoEMA':
+            self.series_decompsition = series_decomp_multi(configs.moving_avg)
+        elif self.gym_series_decomp == 'DFT':
+            self.series_decompsition = DFT_series_decomp()
+        else:
+            raise NotImplementedError
+        
+        # Series Tokenization
+        # no-patching: BxSxD -> (BxD)xSx1; patching: BxSxD -> (BxD)xS -> (BxD) x patch_num x patch_len
+        # https://github.com/thuml/Time-Series-Library/blob/main/models/TimeMixer.py
+        if self.gym_channel_independent: # channel-independent
+            if self.gym_input_embed == 'series-encoding':
+                if self.gym_network_architecture == 'Transformer':
+                    self.enc_embedding = DataEmbedding(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                    self.dec_embedding = DataEmbedding(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                else:
+                    self.enc_embedding = DataEmbedding_wo_pos(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                    self.dec_embedding = DataEmbedding_wo_pos(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
 
-        # Input Embedding
-        if self.gym_input_embed == 'positional-encoding':
-            if self.gym_network_architecture == 'Transformer':
+            elif self.gym_input_embed == 'series-patching':
+                # patch_len = 3 if configs.seq_len % 3 == 0 else 4
+                # stride = patch_len
+                # padding = 0
+
+                patch_len = 16
+                stride = padding = 8
+
+                if self.gym_network_architecture == 'Transformer':
+                    # from PatchTST
+                    self.enc_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                        padding=padding, dropout=configs.dropout)
+                    # todo: PatchTST is encoder-only
+                    self.dec_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                        padding=padding, dropout=configs.dropout)
+                else:
+                    self.enc_embedding = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                               padding=padding, dropout=configs.dropout)
+                    self.dec_embedding = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                               padding=padding, dropout=configs.dropout)
+                    
+                # todo: 为什么原来是stride + 2
+                self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 2)
+                # self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 1)
+                self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout)
+            else:
+                raise NotImplementedError
+        else: # channel-dependent
+            if self.gym_input_embed != 'series-encoding':
+                raise NotImplementedError('Currently channel-dependent only supports series encoding!')
+            elif self.gym_network_architecture == 'Transformer':
                 self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
                 self.dec_embedding = DataEmbedding(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
-            else:
+            else: # MLP, RNN
                 self.enc_embedding = DataEmbedding_wo_pos(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
                 self.dec_embedding = DataEmbedding_wo_pos(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
 
+            # decoder projection
             self.decoder_projection = nn.Linear(configs.d_model, configs.c_out, bias=True)
+            # predicting head
             self.head = nn.Linear(configs.seq_len, configs.pred_len)
-        elif self.gym_input_embed == 'series-patching':
-            patch_len = 16
-            stride = padding = 8
-
-            # patch_len = 3 if configs.seq_len % 3 == 0 else 4
-            # stride = patch_len
-            # padding = 0
-
-            if self.gym_network_architecture == 'Transformer':
-                # from PatchTST
-                self.enc_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride, padding=padding, dropout=configs.dropout)
-                # todo: PatchTST is encoder-only
-                self.dec_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride, padding=padding, dropout=configs.dropout)
-            else:
-                self.enc_embedding = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride, padding=padding, dropout=configs.dropout)
-                self.dec_embedding = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride, padding=padding, dropout=configs.dropout)
-
-            # todo: 为什么原来是stride + 2
-            self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 2)
-            # self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 1)
-            self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout)
-        else:
-            raise NotImplementedError
-
-        # Attention Layer
-        if self.gym_attn == 'self-attention':
-            Attention = FullAttention
-        elif self.gym_attn == 'auto-correlation':
-            Attention = AutoCorrelation
-        elif self.gym_attn == 'sparse-attention':
-            Attention = ProbAttention
-        elif self.gym_attn == 'frequency-enhanced-attention':
-            Attention = FourierCrossAttention
-        elif self.gym_attn == 'destationary-attention':
-            # https://github.com/thuml/Time-Series-Library/blob/3aed70eb3d7b8e5b51e8aafe1f9e69ed06d11de8/models/Nonstationary_Transformer.py#L113
-            raise NotImplementedError
-        else:
-            if self.gym_network_architecture != 'Transformer':
-                pass
+        
+        if self.gym_network_architecture == 'Transformer':
+            # Attention
+            if self.gym_attn == 'self-attention':
+                Attention = FullAttention
+            elif self.gym_attn == 'auto-correlation':
+                Attention = AutoCorrelation
+            elif self.gym_attn == 'sparse-attention':
+                Attention = ProbAttention
+            elif self.gym_attn == 'frequency-enhanced-attention':
+                Attention = FourierCrossAttention
+            elif self.gym_attn == 'destationary-attention':
+                # https://github.com/thuml/Time-Series-Library/blob/3aed70eb3d7b8e5b51e8aafe1f9e69ed06d11de8/models/Nonstationary_Transformer.py#L113
+                raise NotImplementedError
             else:
                 raise NotImplementedError
-        
-        # Encoder
-        if self.gym_network_architecture == 'Transformer':
+            
+            # Encoder
             self.encoder = Encoder(
                 [
                     EncoderLayer(
@@ -216,7 +276,7 @@ class Model(nn.Module):
             # series decomposition
             seasonal_init, trend_init = self.series_decompsition(x_enc)
             # input encoding
-            if self.gym_input_embed == 'positional-encoding':
+            if self.gym_input_embed == 'series-encoding':
                 enc_out_seasonal = self.enc_embedding(seasonal_init, x_mark_enc)
                 enc_out_trend = self.enc_embedding(trend_init, x_mark_enc)
             elif self.gym_input_embed == 'series-patching':
@@ -230,7 +290,7 @@ class Model(nn.Module):
             enc_out = enc_out_seasonal + enc_out_trend
             del enc_out_seasonal, enc_out_trend
 
-            if self.gym_input_embed == 'positional-encoding':
+            if self.gym_input_embed == 'series-encoding':
                 dec_out = self.decoder_projection(enc_out) # BxSxd_model -> BxSxD
                 dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
                 dec_out = dec_out[:, -self.pred_len:, :] # B x pred_len x D
@@ -245,7 +305,7 @@ class Model(nn.Module):
                 raise NotImplementedError
         else:
             # encoder input embedding
-            if self.gym_input_embed == 'positional-encoding':
+            if self.gym_input_embed == 'series-encoding':
                 enc_out = self.enc_embedding(x_enc, x_mark_enc)
             elif self.gym_input_embed == 'series-patching':
                 # do patching and embedding
@@ -262,7 +322,7 @@ class Model(nn.Module):
             enc_out, _ = self.encoder(enc_out, attn_mask=None)
 
             if self.gym_encoder_only: # encoder-only
-                if self.gym_input_embed == 'positional-encoding':
+                if self.gym_input_embed == 'series-encoding':
                     dec_out = self.decoder_projection(enc_out) # BxSxd_model -> BxSxD
                     # projection to predicting length
                     dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
@@ -279,7 +339,7 @@ class Model(nn.Module):
 
             else: # encoder-decoder
                 # decoder input embedding
-                if self.gym_input_embed == 'positional-encoding':
+                if self.gym_input_embed == 'series-encoding':
                     dec_out = self.dec_embedding(x_dec, x_mark_dec)
                 elif self.gym_input_embed == 'series-patching':
                     # do patching and embedding
@@ -295,7 +355,7 @@ class Model(nn.Module):
                 if verbose: print(f'The shape of dec_out: {dec_out.shape}')
 
                 # output layer
-                if self.gym_input_embed == 'positional-encoding':
+                if self.gym_input_embed == 'series-encoding':
                     dec_out = self.decoder_projection(dec_out) # B x L x d_model -> B x L x D
                     dec_out = dec_out[:, -self.pred_len:, :] # B x pred_len x D
                 elif self.gym_input_embed == 'series-patching':

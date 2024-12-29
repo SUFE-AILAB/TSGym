@@ -37,7 +37,6 @@ class moving_avg(nn.Module):
         x = x.permute(0, 2, 1)
         return x
 
-
 class series_decomp(nn.Module):
     """
     Series decomposition block

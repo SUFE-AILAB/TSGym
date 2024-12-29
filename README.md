@@ -28,6 +28,10 @@
 
 ## todo
 - 20241211: TransformerGym_None_series-patching_sparse-attention, loss全是0? (nan)
+- inverse attention
+- multi-resolution
+- channel-independent
+- decoder structure
 
 
 ## Experiment Results
