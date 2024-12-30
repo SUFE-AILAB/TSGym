@@ -1,6 +1,10 @@
 # TSGym
 
 ## Design Dimensions
+
+### Data Augmentation (todo)
+- tslib
+
 ### ↓ Series Normalization
 - None
 - Statistic
@@ -23,9 +27,16 @@
     - series-patching
 - channel-attention (todo)
 
+### ↓ Series Mixing
+- seasonal mixing (high -> low) & trend mixing (low -> high)
+    - cross-attention
+    - linear projection (like Timixer, todo) 
+
 ### ↓ Network Architecture
 - MLP
+    - TSMixer (todo)
 - GRU
+    - segRNN (alignment, todo)
 - CNN (e.g., TimesNet)
 - Transformer
     - Self-attention
