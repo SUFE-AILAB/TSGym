@@ -388,7 +388,7 @@ class Model(nn.Module):
         B, S, D = x_enc.shape
 
         # series sampling
-        x_enc, x_mark_enc = self.series_sampling(x_enc, x_mark_enc)
+        if self.series_sampling: x_enc, x_mark_enc = self.series_sampling(x_enc, x_mark_enc)
 
         # series normalization
         if isinstance(x_enc, list):
@@ -457,7 +457,6 @@ class Model(nn.Module):
                         enc_out_trend_mixed.append(enc_out_trend_)
                     enc_out_trend_previous_ = enc_out_trend_
                 enc_out_trend = enc_out_trend_mixed[::-1]; del enc_out_trend_mixed
-
 
                 # seasonal + trend
                 enc_out_seasonal = [self.encoder_seasonal[i](_, attn_mask=None)[0] for i, _ in enumerate(enc_out_seasonal)]
@@ -534,8 +533,6 @@ class Model(nn.Module):
             else:
                 raise NotImplementedError
             if verbose: print(f'The shape of enc_out after input encoding: {enc_out.shape}')
-
-            # todo, 多粒度交互
 
             # attention in encoder, the shape of enc_out
             # no patching: [bs x seq_len x d_model]
