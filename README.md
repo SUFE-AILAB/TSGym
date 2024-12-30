@@ -12,6 +12,7 @@
 - Moving Average
 - MoE Moving Average (from FEDformer)
 - DFT
+- multi-resolution (like TimesNet and TimeMixer++, todo)
 
 ### ↓ Series Embedding (tokenization)
 - channel-dependent
@@ -20,6 +21,7 @@
 - channel-independent
     - series-encoding
     - series-patching
+- channel-attention (todo)
 
 ### ↓ Network Architecture
 - MLP
