@@ -1,30 +1,39 @@
 # TSGym
 
 ## Design Dimensions
-### Series Normalization
+### ↓ Series Normalization
 - None
 - Statistic
 - RevIN
+- DishTS
 
-### Series Decomposition
+### ↓ Series Decomposition
 - None
-- Seasonal + Trend
+- Moving Average
+- MoE Moving Average (from FEDformer)
+- DFT
 
-### Series Patching 
-- Use or not
+### ↓ Series Embedding (tokenization)
+- channel-dependent
+    - series-encoding (linear projection + positional-encoding for transformer-based; linear projection for non-transformer-based)
+    - inverse embedding (i.e., iTransformer)
+- channel-independent
+    - series-encoding
+    - series-patching
 
-### Input Encoding
-- Linear projection (non-Transformer based)
-- Linear projection + Positional Encoding (Transformer based)
-- Series Patching (only for long-term forecasting task)
-
-### Network Architecture
-
-## Attention
-- Self-attention
-- Auto-Correlation
-- Sparse Attention
-- Frequency Enhanced Attention
+### ↓ Network Architecture
+- MLP
+- GRU
+- CNN (e.g., TimesNet)
+- Transformer
+    - Self-attention
+    - Auto-Correlation
+    - Sparse Attention
+    - Frequency Enhanced Attention
+    - TwostageAttention (todo)
+    - Nonstationary Attention (todo)
+- LLM (todo)
+- TSFM (todo)
 
 ## todo
 - 20241211: TransformerGym_None_series-patching_sparse-attention, loss全是0? (nan)
