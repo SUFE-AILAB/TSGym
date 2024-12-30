@@ -123,7 +123,12 @@ class Model(nn.Module):
             raise NotImplementedError
         
         if self.series_sampling: # series normalization有可学习参数
-            self.series_norm = nn.ModuleList(deepcopy(self.series_norm) for i in range(self.configs.down_sampling_layers + 1))
+            if self.gym_series_norm == 'DishTS':
+                self.series_norm = nn.ModuleList([DishTS(configs, seq_len=configs.seq_len // (configs.down_sampling_window ** i)) 
+                                                  for i in range(configs.down_sampling_layers + 1)])
+            else:
+                self.series_norm = nn.ModuleList(deepcopy(self.series_norm) 
+                                                 for i in range(self.configs.down_sampling_layers + 1))
 
         # Series Decomposition
         print(f'series decomposition: {configs.moving_avg}')
@@ -132,7 +137,7 @@ class Model(nn.Module):
         elif self.gym_series_decomp == 'MA':
             self.series_decompsition = series_decomp(configs.moving_avg)
         elif self.gym_series_decomp == 'MoEMA':
-            self.series_decompsition = series_decomp_multi(configs.moving_avg)
+            self.series_decompsition = series_decomp_multi([15, 25, 35])
         elif self.gym_series_decomp == 'DFT':
             self.series_decompsition = DFT_series_decomp()
         else:
@@ -163,6 +168,9 @@ class Model(nn.Module):
                         )
                         for i in range(configs.down_sampling_layers + 1)
                     ])
+                else:
+                    self.decoder_projection = nn.Linear(configs.d_model, 1, bias=True)
+                    self.head = nn.Linear(configs.seq_len, configs.pred_len)
             elif self.gym_input_embed == 'series-patching':
                 # patch_len = 3 if configs.seq_len % 3 == 0 else 4
                 # stride = patch_len
@@ -554,6 +562,7 @@ class Model(nn.Module):
                         # projection to predicting length
                         dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
                         dec_out = dec_out[:, -self.pred_len:, :]
+                    if self.gym_channel_independent: dec_out = dec_out.reshape(B, D, self.pred_len).permute(0, 2, 1).contiguous()
                 elif self.gym_input_embed == 'series-patching':
                     if self.series_sampling:
                         enc_out = [torch.reshape(_, (-1, n_vars, _.shape[-2], _.shape[-1])) for _ in enc_out]

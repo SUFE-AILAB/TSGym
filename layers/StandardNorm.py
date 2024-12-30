@@ -69,7 +69,7 @@ class Normalize(nn.Module):
 
 # source code from: https://github.com/weifantt/Dish-TS/tree/master
 class DishTS(nn.Module):
-    def __init__(self, configs, init='standard', mode='DishTS'):
+    def __init__(self, configs, seq_len=None, init='standard', mode='DishTS'):
         '''
         :param configs:
         :param init: 'standard', 'avg' or 'uniform'
@@ -78,7 +78,7 @@ class DishTS(nn.Module):
         activate = True
         self.mode = mode
         n_series = configs.enc_in # number of series
-        lookback = configs.seq_len  # lookback length
+        lookback = seq_len if seq_len else configs.seq_len  # lookback length
 
         if init == 'standard':
             self.reduce_mlayer = nn.Parameter(torch.rand(n_series, lookback, 2) / lookback)

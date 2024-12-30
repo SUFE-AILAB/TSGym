@@ -37,27 +37,47 @@ class series_decomp(nn.Module):
         return res, moving_mean
 
 # MoE series decomposition
+# class series_decomp_multi(nn.Module):
+#     """
+#     Multiple Series decomposition block from FEDformer
+#     """
+
+#     def __init__(self, kernel_size):
+#         super(series_decomp_multi, self).__init__()
+#         self.kernel_size = kernel_size
+#         self.series_decomp = [series_decomp(kernel) for kernel in kernel_size]
+
+#     def forward(self, x):
+#         moving_mean = []
+#         res = []
+#         for func in self.series_decomp:
+#             sea, moving_avg = func(x)
+#             moving_mean.append(moving_avg)
+#             res.append(sea)
+
+#         sea = sum(res) / len(res)
+#         moving_mean = sum(moving_mean) / len(moving_mean)
+#         return sea, moving_mean
+
+# from: https://github.com/MAZiqing/FEDformer/blob/master/layers/Autoformer_EncDec.py
 class series_decomp_multi(nn.Module):
     """
-    Multiple Series decomposition block from FEDformer
+    Series decomposition block
     """
-
     def __init__(self, kernel_size):
         super(series_decomp_multi, self).__init__()
-        self.kernel_size = kernel_size
-        self.series_decomp = [series_decomp(kernel) for kernel in kernel_size]
+        self.moving_avg = [moving_avg(kernel, stride=1) for kernel in kernel_size]
+        self.layer = torch.nn.Linear(1, len(kernel_size))
 
     def forward(self, x):
-        moving_mean = []
-        res = []
-        for func in self.series_decomp:
-            sea, moving_avg = func(x)
-            moving_mean.append(moving_avg)
-            res.append(sea)
-
-        sea = sum(res) / len(res)
-        moving_mean = sum(moving_mean) / len(moving_mean)
-        return sea, moving_mean
+        moving_mean=[]
+        for func in self.moving_avg:
+            moving_avg = func(x)
+            moving_mean.append(moving_avg.unsqueeze(-1))
+        moving_mean = torch.cat(moving_mean,dim=-1)
+        moving_mean = torch.sum(moving_mean*nn.Softmax(-1)(self.layer(x.unsqueeze(-1))),dim=-1)
+        res = x - moving_mean
+        return res, moving_mean 
     
 # series decomposition using Discrete Fourier Transform (DFT)
 # https://github.com/thuml/Time-Series-Library/blob/main/models/TimeMixer.py#L9
