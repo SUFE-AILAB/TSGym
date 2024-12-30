@@ -150,6 +150,19 @@ class Model(nn.Module):
                     self.enc_embedding = DataEmbedding_wo_pos(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
                     self.dec_embedding = DataEmbedding_wo_pos(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
 
+                if self.series_sampling:
+                    self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
+                    self.dec_embedding = nn.ModuleList(deepcopy(self.dec_embedding) for i in range(self.configs.down_sampling_layers + 1))
+                    self.decoder_projection = nn.ModuleList(nn.Linear(configs.d_model, 1, bias=True)
+                                              for i in range(self.configs.down_sampling_layers + 1))
+                    self.head = torch.nn.ModuleList(
+                    [
+                        torch.nn.Linear(
+                            configs.seq_len // (configs.down_sampling_window ** i),
+                            configs.pred_len,
+                        )
+                        for i in range(configs.down_sampling_layers + 1)
+                    ])
             elif self.gym_input_embed == 'series-patching':
                 # patch_len = 3 if configs.seq_len % 3 == 0 else 4
                 # stride = patch_len
@@ -178,8 +191,12 @@ class Model(nn.Module):
                 if self.series_sampling:
                     self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
                     self.dec_embedding = nn.ModuleList(deepcopy(self.dec_embedding) for i in range(self.configs.down_sampling_layers + 1))
-                    self.head = nn.ModuleList(deepcopy(self.head) for i in range(self.configs.down_sampling_layers + 1))
-
+                    del self.head_nf, self.head; self.head = []
+                    for i in range(configs.down_sampling_layers + 1):
+                        head_nf = configs.d_model * int((configs.seq_len // (configs.down_sampling_window ** i)
+                                                          - patch_len) / stride + 2)
+                        self.head.append(FlattenHead(configs.enc_in, head_nf, configs.pred_len, head_dropout=configs.dropout))
+                    self.head = nn.ModuleList(self.head)
             else:
                 raise NotImplementedError
         else: # channel-dependent
@@ -207,8 +224,7 @@ class Model(nn.Module):
                         configs.pred_len,
                     )
                     for i in range(configs.down_sampling_layers + 1)
-                ]
-            )
+                ])
                         
         if self.gym_network_architecture == 'Transformer':
             # Attention
@@ -346,6 +362,7 @@ class Model(nn.Module):
     def forecast(self, x_enc, x_mark_enc=None, x_dec=None, x_mark_dec=None, verbose=False):
         # the input shape of x_enc: BxSxD
         if verbose: print(f'The shape of x_enc: {x_enc.shape}')
+        B, S, D = x_enc.shape
 
         # series sampling
         x_enc, x_mark_enc = self.series_sampling(x_enc, x_mark_enc)
@@ -355,6 +372,15 @@ class Model(nn.Module):
             x_enc = [self.series_norm[i](_, 'norm') for i, _ in enumerate(x_enc)]
         else:
             x_enc = self.series_norm(x_enc, 'norm')
+
+        if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
+            # BxSxD -> (BxD)xSx1
+            if isinstance(x_enc, list):
+                x_enc = [_.permute(0, 2, 1).contiguous().reshape(B * D, _.shape[1], 1) for _ in x_enc]
+                if x_mark_enc is not None: x_mark_enc = [_.repeat(D, 1, 1) for _ in x_mark_enc]
+            else:
+                x_enc = x_enc.permute(0, 2, 1).contiguous().reshape(B * D, S, 1)
+                if x_mark_enc is not None: x_mark_enc = x_mark_enc.repeat(D, 1, 1)
         
         # series decomposition (todo整理代码, 目前还是太复杂了)
         if self.series_decompsition:
@@ -417,6 +443,7 @@ class Model(nn.Module):
                     dec_out = self.decoder_projection(enc_out) # BxSxd_model -> BxSxD
                     dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
                     dec_out = dec_out[:, -self.pred_len:, :] # B x pred_len x D
+                if self.gym_channel_independent: dec_out = dec_out.reshape(B, D, self.pred_len).permute(0, 2, 1).contiguous()
             elif self.gym_input_embed == 'series-patching':
                 if self.series_sampling:
                     enc_out = [torch.reshape(_, (-1, n_vars, _.shape[-2], _.shape[-1])) for _ in enc_out]
@@ -501,7 +528,8 @@ class Model(nn.Module):
                     raise NotImplementedError
 
         # de-normalization layer (if necessary)
-        dec_out = self.series_norm(dec_out, 'denorm')        
+        # 如果混合粒度情况, 用第一(0)层参照TimeMixer
+        dec_out = self.series_norm[0](dec_out, 'denorm') if self.series_sampling else self.series_norm(dec_out, 'denorm')
         return dec_out
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
