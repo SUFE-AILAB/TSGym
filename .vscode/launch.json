@@ -17,7 +17,8 @@
 			"connect": {
 				"host": "localhost",
 				"port": 8888
-			}
+			},
+			"pythonPath": "/data/coding/chaochuan/quant/ENTER/envs/mqenv/bin/python"
 		}
 	]
 } 

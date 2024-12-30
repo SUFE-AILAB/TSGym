@@ -225,7 +225,30 @@ class Model(nn.Module):
                     )
                     for i in range(configs.down_sampling_layers + 1)
                 ])
-                        
+
+        # multi-granularity interation (based-on self-attention)
+        # seasonal: high -> low; trend: low -> high
+        if self.series_sampling and self.series_decompsition:
+            self.seasonal_mixing = AttentionLayer(
+                                    FullAttention(mask_flag=False,
+                                                  factor=configs.factor,
+                                                  attention_dropout=configs.dropout,
+                                                  output_attention=False), # masked multi-head attention
+                                    configs.d_model, configs.n_heads)
+            self.trend_mixing = AttentionLayer(
+                                    FullAttention(mask_flag=False,
+                                                  factor=configs.factor,
+                                                  attention_dropout=configs.dropout,
+                                                  output_attention=False), # masked multi-head attention
+                                    configs.d_model, configs.n_heads)
+            
+            self.seasonal_mixing = nn.ModuleList([deepcopy(self.seasonal_mixing) 
+                                                  for i in range(self.configs.down_sampling_layers)])
+            self.trend_mixing = nn.ModuleList([deepcopy(self.trend_mixing) 
+                                               for i in range(self.configs.down_sampling_layers)])
+
+
+        # encoder(-decoder)                        
         if self.gym_network_architecture == 'Transformer':
             # Attention
             if self.gym_attn == 'self-attention':
@@ -406,7 +429,35 @@ class Model(nn.Module):
                         raise NotImplementedError
                     enc_out_seasonal.append(enc_out_seasonal_); enc_out_trend.append(enc_out_trend_)
 
-                # todo, 多粒度交互
+                # multi-granularity mixing
+                # seasonal: high -> low
+                enc_out_seasonal_mixed = []
+                for i, enc_out_seasonal_ in enumerate(enc_out_seasonal):
+                    if i == 0:
+                        enc_out_seasonal_mixed.append(enc_out_seasonal_)
+                    else:
+                        enc_out_seasonal_ = self.seasonal_mixing[i-1](queries=enc_out_seasonal_,
+                                                                      keys=enc_out_seasonal_previous_,
+                                                                      values=enc_out_seasonal_previous_,
+                                                                      attn_mask=None)[0]
+                        enc_out_seasonal_mixed.append(enc_out_seasonal_)
+                    enc_out_seasonal_previous_ = enc_out_seasonal_
+                enc_out_seasonal = enc_out_seasonal_mixed; del enc_out_seasonal_mixed
+                
+                # tred: low -> high
+                enc_out_trend_mixed = []
+                for i, enc_out_trend_ in enumerate(enc_out_trend[::-1]):
+                    if i == 0:
+                        enc_out_trend_mixed.append(enc_out_trend_)
+                    else:
+                        enc_out_trend_ = self.trend_mixing[i-1](queries=enc_out_trend_,
+                                                                keys=enc_out_trend_previous_,
+                                                                values=enc_out_trend_previous_,
+                                                                attn_mask=None)[0]
+                        enc_out_trend_mixed.append(enc_out_trend_)
+                    enc_out_trend_previous_ = enc_out_trend_
+                enc_out_trend = enc_out_trend_mixed[::-1]; del enc_out_trend_mixed
+
 
                 # seasonal + trend
                 enc_out_seasonal = [self.encoder_seasonal[i](_, attn_mask=None)[0] for i, _ in enumerate(enc_out_seasonal)]
@@ -463,34 +514,63 @@ class Model(nn.Module):
         else:
             # encoder input embedding
             if self.gym_input_embed == 'series-encoding':
-                enc_out = self.enc_embedding(x_enc, x_mark_enc)
+                if self.series_sampling:
+                    assert len(x_enc) == len(x_mark_enc)
+                    enc_out = [self.enc_embedding[i](x_enc[i], x_mark_enc[i]) for i in range(len(x_enc))]
+                else:
+                    enc_out = self.enc_embedding(x_enc, x_mark_enc)
             elif self.gym_input_embed == 'series-patching':
-                # do patching and embedding
-                x_enc = x_enc.permute(0, 2, 1) # BxSxD -> BxDxS
-                # u: [bs * nvars x patch_num x d_model]
-                enc_out, n_vars = self.enc_embedding(x_enc)
+                if self.series_sampling:
+                    x_enc = [_.permute(0, 2, 1) for _ in x_enc]
+                    enc_out = []
+                    for i, x_enc_ in enumerate(x_enc):
+                        enc_out_, n_vars = self.enc_embedding[i](x_enc_)
+                        enc_out.append(enc_out_)
+                else:
+                    # do patching and embedding
+                    x_enc = x_enc.permute(0, 2, 1) # BxSxD -> BxDxS
+                    # u: [bs * nvars x patch_num x d_model]
+                    enc_out, n_vars = self.enc_embedding(x_enc)
             else:
                 raise NotImplementedError
             if verbose: print(f'The shape of enc_out after input encoding: {enc_out.shape}')
 
+            # todo, 多粒度交互
+
             # attention in encoder, the shape of enc_out
             # no patching: [bs x seq_len x d_model]
             # patching: [(bs * nvars) x patch_num x d_model]
-            enc_out, _ = self.encoder(enc_out, attn_mask=None)
+            if isinstance(enc_out, list):
+                enc_out = [self.encoder[i](_, attn_mask=None)[0] for i, _ in enumerate(enc_out)]
+            else:
+                enc_out, _ = self.encoder(enc_out, attn_mask=None)
 
             if self.gym_encoder_only: # encoder-only
                 if self.gym_input_embed == 'series-encoding':
-                    dec_out = self.decoder_projection(enc_out) # BxSxd_model -> BxSxD
-                    # projection to predicting length
-                    dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
-                    dec_out = dec_out[:, -self.pred_len:, :]
+                    if self.series_sampling:
+                        dec_out = [self.decoder_projection[i](_) for i, _ in enumerate(enc_out)]
+                        dec_out = [self.head[i](_.permute(0, 2, 1)).permute(0, 2, 1) for i, _ in enumerate(dec_out)]
+                        dec_out = [_[:, -self.pred_len:, :] for _ in dec_out]
+                        dec_out = torch.stack(dec_out, dim=-1).sum(-1)
+                    else:
+                        dec_out = self.decoder_projection(enc_out) # BxSxd_model -> BxSxD
+                        # projection to predicting length
+                        dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
+                        dec_out = dec_out[:, -self.pred_len:, :]
                 elif self.gym_input_embed == 'series-patching':
-                    # z: [bs x nvars x patch_num x d_model]
-                    enc_out = torch.reshape(enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1]))
-                    # z: [bs x nvars x d_model x patch_num]
-                    enc_out = enc_out.permute(0, 1, 3, 2)
-                    dec_out = self.head(enc_out)  # B x D x pred_len
-                    dec_out = dec_out.permute(0, 2, 1) # B x pred_len x D
+                    if self.series_sampling:
+                        enc_out = [torch.reshape(_, (-1, n_vars, _.shape[-2], _.shape[-1])) for _ in enc_out]
+                        enc_out = [_.permute(0, 1, 3, 2) for _ in enc_out]
+                        dec_out = [self.head[i](_) for i, _ in enumerate(enc_out)]
+                        dec_out = [_.permute(0, 2, 1) for _ in dec_out]
+                        dec_out = torch.stack(dec_out, dim=-1).sum(-1)                   
+                    else:
+                        # z: [bs x nvars x patch_num x d_model]
+                        enc_out = torch.reshape(enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1]))
+                        # z: [bs x nvars x d_model x patch_num]
+                        enc_out = enc_out.permute(0, 1, 3, 2)
+                        dec_out = self.head(enc_out)  # B x D x pred_len
+                        dec_out = dec_out.permute(0, 2, 1) # B x pred_len x D
                 else:
                     raise NotImplementedError
 
