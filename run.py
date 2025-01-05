@@ -189,13 +189,22 @@ if __name__ == '__main__':
                 args.embed,
                 args.distil,
                 args.des, ii)
-
-            print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-            exp.train(setting)
-
-            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            exp.test(setting)
-            torch.cuda.empty_cache()
+            
+            folder_path = f'./results/' + setting + '/'
+            folder_pathGym = f'./resultsGym/' + setting + '/'
+            if not os.path.exists(folder_path) and not os.path.exists(folder_pathGym):
+                print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+                # try:
+                #     exp.train(setting)
+                # except Exception as error:
+                #     print(f'Error when fitting model: {args.model}')
+                exp.train(setting)
+                    
+                print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+                exp.test(setting)
+                torch.cuda.empty_cache()
+            else:
+                print(f'The results already exist! skip...')
     else:
         ii = 0
         setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
@@ -218,8 +227,13 @@ if __name__ == '__main__':
             args.embed,
             args.distil,
             args.des, ii)
-
-        exp = Exp(args)  # set experiments
-        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-        exp.test(setting, test=1)
-        torch.cuda.empty_cache()
+        
+        folder_path = f'./results/' + setting + '/'
+        folder_pathGym = f'./resultsGym/' + setting + '/'
+        if not os.path.exists(folder_path) and not os.path.exists(folder_pathGym):
+            exp = Exp(args)  # set experiments
+            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            exp.test(setting, test=1)
+            torch.cuda.empty_cache()
+        else:
+            print(f'The results already exist! skip...')

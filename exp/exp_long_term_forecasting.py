@@ -5,6 +5,7 @@ from utils.metrics import metric
 import torch
 import torch.nn as nn
 from torch import optim
+from tqdm import tqdm
 import os
 import time
 import warnings
@@ -202,7 +203,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(test_loader)):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
 
@@ -286,7 +287,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         f.close()
 
         np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
-        np.save(folder_path + 'pred.npy', preds)
-        np.save(folder_path + 'true.npy', trues)
+        # np.save(folder_path + 'pred.npy', preds)
+        # np.save(folder_path + 'true.npy', trues)
 
         return
