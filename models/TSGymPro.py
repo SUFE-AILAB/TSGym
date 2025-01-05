@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer, ConvLayer
 from layers.SelfAttention_Family import FullAttention, ProbAttention, DSAttention, FourierCrossAttention, AutoCorrelation
 from layers.SelfAttention_Family import AttentionLayer
-from layers.Embed import DataEmbedding_wo_pos, DataEmbedding, PatchEmbedding_wo_pos, PatchEmbedding
+from layers.Embed import DataEmbedding_wo_pos, DataEmbedding, DataEmbedding_inverted, PatchEmbedding_wo_pos, PatchEmbedding
 from layers.StandardNorm import Normalize, DishTS
 from layers.SeriesDecom import series_decomp, series_decomp_multi, DFT_series_decomp
 import numpy as np
@@ -48,6 +48,38 @@ class GRU(nn.Module):
     def forward(self, x, attn_mask=None): # input shape: [BxSxD]
         x, _ = self.encoder(x)
         return x, None
+    
+class Projector(nn.Module):
+    '''
+    MLP to learn the De-stationary factors
+    Paper link: https://openreview.net/pdf?id=ucNDIDRNjjv
+    '''
+
+    def __init__(self, enc_in, seq_len, hidden_dims, hidden_layers, output_dim, kernel_size=3):
+        super(Projector, self).__init__()
+
+        padding = 1 if torch.__version__ >= '1.5.0' else 2
+        self.series_conv = nn.Conv1d(in_channels=seq_len, out_channels=1, kernel_size=kernel_size, padding=padding,
+                                     padding_mode='circular', bias=False)
+
+        layers = [nn.Linear(2 * enc_in, hidden_dims[0]), nn.ReLU()]
+        for i in range(hidden_layers - 1):
+            layers += [nn.Linear(hidden_dims[i], hidden_dims[i + 1]), nn.ReLU()]
+
+        layers += [nn.Linear(hidden_dims[-1], output_dim, bias=False)]
+        self.backbone = nn.Sequential(*layers)
+
+    def forward(self, x, stats):
+        # x:     B x S x E
+        # stats: B x 1 x E
+        # y:     B x O
+        batch_size = x.shape[0]
+        x = self.series_conv(x)  # B x 1 x E
+        x = torch.cat([x, stats], dim=1)  # B x 2 x E
+        x = x.view(batch_size, -1)  # B x 2E
+        y = self.backbone(x)  # B x O
+
+        return y
 
 class Model(nn.Module):
     def __init__(self, configs,
@@ -208,20 +240,30 @@ class Model(nn.Module):
             else:
                 raise NotImplementedError
         else: # channel-dependent
-            if self.gym_input_embed != 'series-encoding':
-                raise NotImplementedError('Currently channel-dependent only supports series encoding!')
-            elif self.gym_network_architecture == 'Transformer':
-                self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
-                self.dec_embedding = DataEmbedding(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
-            else: # MLP, RNN
-                self.enc_embedding = DataEmbedding_wo_pos(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
-                self.dec_embedding = DataEmbedding_wo_pos(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
+            if self.gym_input_embed == 'inverted-encoding':
+                # inverted DataEmbedding w/o positional encoding
+                self.enc_embedding = DataEmbedding_inverted(configs.seq_len, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                self.dec_embedding = DataEmbedding_inverted(configs.seq_len, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                # predicting head
+                self.decoder_projection = None
+                self.head = nn.Linear(configs.d_model, configs.pred_len, bias=True)
+            elif self.gym_input_embed == 'series-encoding':
+                if self.gym_network_architecture == 'Transformer':
+                    self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                    self.dec_embedding = DataEmbedding(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                else: # MLP, RNN
+                    self.enc_embedding = DataEmbedding_wo_pos(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                    self.dec_embedding = DataEmbedding_wo_pos(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
 
-            # decoder projection
-            self.decoder_projection = nn.Linear(configs.d_model, configs.c_out, bias=True)
-            # predicting head
-            self.head = nn.Linear(configs.seq_len, configs.pred_len)
+                # decoder projection
+                self.decoder_projection = nn.Linear(configs.d_model, configs.c_out, bias=True)
+                # predicting head
+                self.head = nn.Linear(configs.seq_len, configs.pred_len)
+            else:
+                raise NotImplementedError
+
             if self.series_sampling:
+                if self.gym_input_embed == 'inverted-encoding': raise NotImplementedError
                 self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
                 self.dec_embedding = nn.ModuleList(deepcopy(self.dec_embedding) for i in range(self.configs.down_sampling_layers + 1))
                 self.decoder_projection = nn.ModuleList(deepcopy(self.decoder_projection) for i in range(self.configs.down_sampling_layers + 1))
@@ -269,7 +311,28 @@ class Model(nn.Module):
                 Attention = FourierCrossAttention
             elif self.gym_attn == 'destationary-attention':
                 # https://github.com/thuml/Time-Series-Library/blob/3aed70eb3d7b8e5b51e8aafe1f9e69ed06d11de8/models/Nonstationary_Transformer.py#L113
-                raise NotImplementedError
+                if self.gym_series_norm != 'Stat': raise NotImplementedError
+                if self.gym_input_embed == 'inverted-encoding': raise NotImplementedError
+                Attention = DSAttention
+
+                if self.gym_series_sampling:
+                    self.tau_learner = nn.ModuleList([Projector(enc_in=configs.enc_in, seq_len=configs.seq_len // (configs.down_sampling_window ** i),
+                                                                hidden_dims=configs.p_hidden_dims,
+                                                                hidden_layers=configs.p_hidden_layers,
+                                                                output_dim=1)
+                                                                for i in range(configs.down_sampling_layers + 1)])
+                    self.delta_learner = nn.ModuleList([Projector(enc_in=configs.enc_in, seq_len=configs.seq_len // (configs.down_sampling_window ** i),
+                                                                  hidden_dims=configs.p_hidden_dims,
+                                                                  hidden_layers=configs.p_hidden_layers,
+                                                                  output_dim=configs.seq_len // (configs.down_sampling_window ** i)) 
+                                                                  for i in range(configs.down_sampling_layers + 1)])             
+                
+                else:
+                    self.tau_learner = Projector(enc_in=configs.enc_in, seq_len=configs.seq_len, hidden_dims=configs.p_hidden_dims,
+                                                hidden_layers=configs.p_hidden_layers, output_dim=1)
+                    self.delta_learner = Projector(enc_in=configs.enc_in, seq_len=configs.seq_len,
+                                                hidden_dims=configs.p_hidden_dims, hidden_layers=configs.p_hidden_layers,
+                                                output_dim=configs.seq_len)
             else:
                 raise NotImplementedError
             
@@ -401,7 +464,25 @@ class Model(nn.Module):
         # series normalization
         if isinstance(x_enc, list):
             x_enc = [self.series_norm[i](_, 'norm') for i, _ in enumerate(x_enc)]
+            if self.gym_attn == 'destationary-attention':
+                tau, delta = [], []
+                for i, x_enc_ in enumerate(x_enc):
+                    mean_enc = x_enc_.mean(1, keepdim=True).detach()
+                    std_enc = torch.sqrt(torch.var(x_enc_, dim=1, keepdim=True, unbiased=False) + 1e-5).detach()
+                    tau.append(self.tau_learner[i](x_enc_.clone().detach(), std_enc).exp())
+                    delta.append(self.delta_learner[i](x_enc_.clone().detach(), mean_enc))
+            else:
+                tau, delta = [None] * len(x_enc), [None] * len(x_enc)
         else:
+            if self.gym_attn == 'destationary-attention':
+                mean_enc = x_enc.mean(1, keepdim=True).detach()  # B x 1 x E
+                std_enc = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5).detach()  # B x 1 x E
+                # B x S x E, B x 1 x E -> B x 1, positive scalar
+                tau = self.tau_learner(x_enc.clone().detach(), std_enc).exp() # x_raw
+                # B x S x E, B x 1 x E -> B x S
+                delta = self.delta_learner(x_enc.clone().detach(), mean_enc)
+            else:
+                tau, delta = None, None
             x_enc = self.series_norm(x_enc, 'norm')
 
         if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
@@ -467,8 +548,8 @@ class Model(nn.Module):
                 enc_out_trend = enc_out_trend_mixed[::-1]; del enc_out_trend_mixed
 
                 # seasonal + trend
-                enc_out_seasonal = [self.encoder_seasonal[i](_, attn_mask=None)[0] for i, _ in enumerate(enc_out_seasonal)]
-                enc_out_trend = [self.encoder_trend[i](_, attn_mask=None)[0] for i, _ in enumerate(enc_out_trend)]
+                enc_out_seasonal = [self.encoder_seasonal[i](_, attn_mask=None, tau=tau[i], delta=delta[i])[0] for i, _ in enumerate(enc_out_seasonal)]
+                enc_out_trend = [self.encoder_trend[i](_, attn_mask=None, tau=tau[i], delta=delta[i])[0] for i, _ in enumerate(enc_out_trend)]
                 enc_out = [enc_out_seasonal_ + enc_out_trend_ for enc_out_seasonal_, enc_out_trend_
                             in zip(enc_out_seasonal, enc_out_trend)]
                 del enc_out_seasonal, enc_out_trend
@@ -476,7 +557,10 @@ class Model(nn.Module):
                 # series decomposition
                 seasonal_init, trend_init = self.series_decompsition(x_enc)
                 # input encoding
-                if self.gym_input_embed == 'series-encoding':
+                if self.gym_input_embed == 'inverted-encoding':
+                    enc_out_seasonal = self.enc_embedding(seasonal_init, x_mark_enc)
+                    enc_out_trend = self.enc_embedding(trend_init, x_mark_enc)
+                elif self.gym_input_embed == 'series-encoding':
                     enc_out_seasonal = self.enc_embedding(seasonal_init, x_mark_enc)
                     enc_out_trend = self.enc_embedding(trend_init, x_mark_enc)
                 elif self.gym_input_embed == 'series-patching':
@@ -486,12 +570,18 @@ class Model(nn.Module):
                     raise NotImplementedError
 
                 # seasonal + trend
-                enc_out_seasonal, _ = self.encoder_seasonal(enc_out_seasonal, attn_mask=None)
-                enc_out_trend, _ = self.encoder_trend(enc_out_trend, attn_mask=None)
+                enc_out_seasonal, _ = self.encoder_seasonal(enc_out_seasonal, attn_mask=None, tau=tau, delta=delta)
+                enc_out_trend, _ = self.encoder_trend(enc_out_trend, attn_mask=None, tau=tau, delta=delta)
                 enc_out = enc_out_seasonal + enc_out_trend
                 del enc_out_seasonal, enc_out_trend
 
-            if self.gym_input_embed == 'series-encoding':
+            if self.gym_input_embed == 'inverted-encoding':
+                dec_out = self.head(enc_out) # BxDxd_model -> BxDxpred_len
+                dec_out = dec_out.permute(0, 2, 1) # BxDxpred_len -> Bxpred_lenxD
+                # truncate if have covariate input, see: 
+                # https://github.com/thuml/Time-Series-Library/blob/cdf8f0c3c5e79c1e8152e71dc35009ae46a6a920/layers/Embed.py#L141
+                dec_out = dec_out[:, :, :D]
+            elif self.gym_input_embed == 'series-encoding':
                 if self.series_sampling:
                     dec_out = [self.decoder_projection[i](_) for i, _ in enumerate(enc_out)]
                     dec_out = [self.head[i](_.permute(0, 2, 1)).permute(0, 2, 1) for i, _ in enumerate(dec_out)]
@@ -520,7 +610,9 @@ class Model(nn.Module):
                 raise NotImplementedError
         else:
             # encoder input embedding
-            if self.gym_input_embed == 'series-encoding':
+            if self.gym_input_embed == 'inverted-encoding':
+                enc_out = self.enc_embedding(x_enc, x_mark_enc)
+            elif self.gym_input_embed == 'series-encoding':
                 if self.series_sampling:
                     assert len(x_enc) == len(x_mark_enc)
                     enc_out = [self.enc_embedding[i](x_enc[i], x_mark_enc[i]) for i in range(len(x_enc))]
@@ -546,12 +638,16 @@ class Model(nn.Module):
             # no patching: [bs x seq_len x d_model]
             # patching: [(bs * nvars) x patch_num x d_model]
             if isinstance(enc_out, list):
-                enc_out = [self.encoder[i](_, attn_mask=None)[0] for i, _ in enumerate(enc_out)]
+                enc_out = [self.encoder[i](_, attn_mask=None, tau=tau[i], delta=delta[i])[0] for i, _ in enumerate(enc_out)]
             else:
-                enc_out, _ = self.encoder(enc_out, attn_mask=None)
+                enc_out, _ = self.encoder(enc_out, attn_mask=None, tau=tau, delta=delta)
 
             if self.gym_encoder_only: # encoder-only
-                if self.gym_input_embed == 'series-encoding':
+                if self.gym_input_embed == 'inverted-encoding':
+                    dec_out = self.head(enc_out) # BxDxd_model -> BxDxpred_len
+                    dec_out = dec_out.permute(0, 2, 1) # BxDxpred_len -> Bxpred_lenxD
+                    dec_out = dec_out[:, :, :D]
+                elif self.gym_input_embed == 'series-encoding':
                     if self.series_sampling:
                         dec_out = [self.decoder_projection[i](_) for i, _ in enumerate(enc_out)]
                         dec_out = [self.head[i](_.permute(0, 2, 1)).permute(0, 2, 1) for i, _ in enumerate(dec_out)]

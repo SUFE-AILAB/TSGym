@@ -21,7 +21,7 @@
 ### ↓ Series Embedding (tokenization)
 - channel-dependent
     - series-encoding (linear projection + positional-encoding for transformer-based; linear projection for non-transformer-based)
-    - inverse embedding (i.e., iTransformer)
+    - inverted-encoding (in iTransformer)
 - channel-independent
     - series-encoding
     - series-patching
@@ -44,17 +44,19 @@
     - Sparse Attention
     - Frequency Enhanced Attention
     - TwostageAttention (todo)
-    - Nonstationary Attention (todo)
+    - Nonstationary Attention
 - LLM (todo)
 - TSFM (todo)
 
 ## todo
-- 20241211: TransformerGym_None_series-patching_sparse-attention, loss全是0? (nan)
+- <del>20241211: TransformerGym_None_series-patching_sparse-attention, loss全是0? (nan)</del>
 - inverse attention
-- multi-resolution
-- channel-independent
+- <del>multi-resolution</del>
+- <del>channel-independent</del>
 - decoder structure
-
+- [iTransformer中的截断问题](https://github.com/thuml/Time-Series-Library/blob/cdf8f0c3c5e79c1e8152e71dc35009ae46a6a920/models/iTransformer.py#L101C60-L101C70)
+- seasonal/trend用不同的enc_embedding?
+- TwoStageAttention layer?
 
 ## Experiment Results
 ![alt text](image.png)
