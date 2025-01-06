@@ -51,12 +51,14 @@
 ## todo
 - <del>20241211: TransformerGym_None_series-patching_sparse-attention, loss全是0? (nan)</del>
 - inverse attention
-- <del>multi-resolution</del>
+- <del>multi-resolution (cross-attention based)</del>
 - <del>channel-independent</del>
 - decoder structure
 - [iTransformer中的截断问题](https://github.com/thuml/Time-Series-Library/blob/cdf8f0c3c5e79c1e8152e71dc35009ae46a6a920/models/iTransformer.py#L101C60-L101C70)
 - seasonal/trend用不同的enc_embedding?
 - TwoStageAttention layer?
+- MLP-based multi-resolution mixing
+- data augmentation
 
 ## Experiment Results
 ![alt text](image.png)

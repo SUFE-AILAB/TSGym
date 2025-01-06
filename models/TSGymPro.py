@@ -33,7 +33,7 @@ class DNN(nn.Module):
                                 nn.GELU(),
                                 nn.Linear(configs.d_model, configs.d_model))
 
-    def forward(self, x, attn_mask=None): # input shape: [BxSxD]
+    def forward(self, x, attn_mask=None, tau=None, delta=None): # input shape: [BxSxD]
         x = self.fc(x)
         return x, None
     
@@ -45,7 +45,7 @@ class GRU(nn.Module):
                               num_layers=configs.e_layers,
                               batch_first=True)
 
-    def forward(self, x, attn_mask=None): # input shape: [BxSxD]
+    def forward(self, x, attn_mask=None, tau=None, delta=None): # input shape: [BxSxD]
         x, _ = self.encoder(x)
         return x, None
     

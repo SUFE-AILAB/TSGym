@@ -1,6 +1,7 @@
 import argparse
 import os
 import torch
+import logging
 from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
 from exp.exp_imputation import Exp_Imputation
 from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
@@ -20,6 +21,9 @@ if __name__ == '__main__':
     os.makedirs('./test_resultsGym', exist_ok=True)
 
     parser = argparse.ArgumentParser(description='TimesNet')
+
+    logging.basicConfig(filename='error.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+    logger = logging.getLogger()
 
     # basic config
     parser.add_argument('--task_name', type=str, required=True, default='long_term_forecast',
@@ -169,7 +173,7 @@ if __name__ == '__main__':
         for ii in range(args.itr):
             # setting record of experiments
             exp = Exp(args)  # set experiments
-            setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
+            setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_{}'.format(
                 args.task_name,
                 args.model_id,
                 args.model,
@@ -188,17 +192,18 @@ if __name__ == '__main__':
                 args.factor,
                 args.embed,
                 args.distil,
-                args.des, ii)
+                args.des,
+                args.train_epochs,
+                args.learning_rate, ii)
             
             folder_path = f'./results/' + setting + '/'
             folder_pathGym = f'./resultsGym/' + setting + '/'
             if not os.path.exists(folder_path) and not os.path.exists(folder_pathGym):
                 print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-                # try:
-                #     exp.train(setting)
-                # except Exception as error:
-                #     print(f'Error when fitting model: {args.model}')
-                exp.train(setting)
+                try:
+                    exp.train(setting)
+                except Exception as error:
+                    logger.info(f'Error when fitting the setting: {setting}, error: {error}')
                     
                 print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
                 exp.test(setting)
@@ -207,7 +212,7 @@ if __name__ == '__main__':
                 print(f'The results already exist! skip...')
     else:
         ii = 0
-        setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
+        setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_{}'.format(
             args.task_name,
             args.model_id,
             args.model,
@@ -226,7 +231,9 @@ if __name__ == '__main__':
             args.factor,
             args.embed,
             args.distil,
-            args.des, ii)
+            args.des, 
+            args.train_epochs,
+            args.learning_rate, ii)
         
         folder_path = f'./results/' + setting + '/'
         folder_pathGym = f'./resultsGym/' + setting + '/'
