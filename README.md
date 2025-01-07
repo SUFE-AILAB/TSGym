@@ -59,6 +59,7 @@
 - TwoStageAttention layer?
 - MLP-based multi-resolution mixing
 - data augmentation
+- bug: seq_len=192和series-patching
 
 ## Experiment Results
 ![alt text](image.png)

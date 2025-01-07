@@ -24,6 +24,14 @@ class FlattenHead(nn.Module):
         x = self.dropout(x)
         return x
 
+def calculate_patch_num(seq_len, patch_len=5):
+    # 原本stride=1, 例如seq_len=60会产生60-patch_len+1个patches, 高度overlapped
+    # 现在stride=patch_len, 产生的是non-overlapped patches
+    stride = patch_len
+    padding = patch_len - seq_len % patch_len if seq_len % patch_len != 0 else 0
+    patch_num = int((seq_len + padding - patch_len) / stride + 1)
+    return stride, padding, patch_num, patch_len
+
 # todo: encoder-decoder architecture
 # todo: non-stationary
 class DNN(nn.Module):
@@ -208,8 +216,10 @@ class Model(nn.Module):
                 # stride = patch_len
                 # padding = 0
 
-                patch_len = 16
-                stride = padding = 8
+                # patch_len = 16
+                # stride = padding = 8
+
+                stride, padding, patch_num, patch_len = calculate_patch_num(configs.seq_len)
 
                 if self.gym_network_architecture == 'Transformer':
                     # from PatchTST
@@ -312,7 +322,7 @@ class Model(nn.Module):
             elif self.gym_attn == 'destationary-attention':
                 # https://github.com/thuml/Time-Series-Library/blob/3aed70eb3d7b8e5b51e8aafe1f9e69ed06d11de8/models/Nonstationary_Transformer.py#L113
                 if self.gym_series_norm != 'Stat': raise NotImplementedError
-                if self.gym_input_embed == 'inverted-encoding': raise NotImplementedError
+                if self.gym_input_embed != 'series-encoding': raise NotImplementedError
                 Attention = DSAttention
 
                 if self.gym_series_sampling:
@@ -481,6 +491,7 @@ class Model(nn.Module):
                 tau = self.tau_learner(x_enc.clone().detach(), std_enc).exp() # x_raw
                 # B x S x E, B x 1 x E -> B x S
                 delta = self.delta_learner(x_enc.clone().detach(), mean_enc)
+                print(f'the shape of tau: {tau.shape}, delta: {delta.shape}')
             else:
                 tau, delta = None, None
             x_enc = self.series_norm(x_enc, 'norm')
@@ -570,6 +581,7 @@ class Model(nn.Module):
                     raise NotImplementedError
 
                 # seasonal + trend
+                print(f'the shape of enc_out_seasonal: {enc_out_seasonal.shape}, enc_out_trend: {enc_out_trend.shape}')
                 enc_out_seasonal, _ = self.encoder_seasonal(enc_out_seasonal, attn_mask=None, tau=tau, delta=delta)
                 enc_out_trend, _ = self.encoder_trend(enc_out_trend, attn_mask=None, tau=tau, delta=delta)
                 enc_out = enc_out_seasonal + enc_out_trend
