@@ -120,7 +120,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                 self.model.train()
                 epoch_time = time.time()
-                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(train_loader)):
                     iter_count += 1
                     model_optim.zero_grad()
                     batch_x = batch_x.float().to(self.device)

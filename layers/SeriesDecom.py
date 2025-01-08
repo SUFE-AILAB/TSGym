@@ -94,7 +94,8 @@ class DFT_series_decomp(nn.Module):
         xf = torch.fft.rfft(x)
         freq = abs(xf)
         freq[0] = 0
-        top_k_freq, top_list = torch.topk(freq, 5)
+        # top_k_freq, top_list = torch.topk(freq, 5)
+        top_k_freq, top_list = torch.topk(freq, min(self.top_k, freq.shape[-1])) # modified
         xf[freq <= top_k_freq.min()] = 0
         x_season = torch.fft.irfft(xf, n=x.shape[-1]) # modify
         x_trend = x - x_season

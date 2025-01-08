@@ -24,7 +24,7 @@ class FlattenHead(nn.Module):
         x = self.dropout(x)
         return x
 
-def calculate_patch_num(seq_len, patch_len=5):
+def calculate_patch_num(seq_len, patch_len=8):
     # 原本stride=1, 例如seq_len=60会产生60-patch_len+1个patches, 高度overlapped
     # 现在stride=patch_len, 产生的是non-overlapped patches
     stride = patch_len
@@ -220,7 +220,6 @@ class Model(nn.Module):
                 # stride = padding = 8
 
                 stride, padding, patch_num, patch_len = calculate_patch_num(configs.seq_len)
-
                 if self.gym_network_architecture == 'Transformer':
                     # from PatchTST
                     self.enc_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
@@ -233,19 +232,32 @@ class Model(nn.Module):
                                                                padding=padding, dropout=configs.dropout)
                     self.dec_embedding = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
                                                                padding=padding, dropout=configs.dropout)
-                    
-                # todo: 为什么原来是stride + 2
                 self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 2)
-                # self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 1)
                 self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout)
+
                 if self.series_sampling:
-                    self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
-                    self.dec_embedding = nn.ModuleList(deepcopy(self.dec_embedding) for i in range(self.configs.down_sampling_layers + 1))
-                    del self.head_nf, self.head; self.head = []
+                    self.enc_embedding, self.dec_embedding, self.head = torch.nn.ModuleList(), torch.nn.ModuleList(), torch.nn.ModuleList()
                     for i in range(configs.down_sampling_layers + 1):
-                        head_nf = configs.d_model * int((configs.seq_len // (configs.down_sampling_window ** i)
-                                                          - patch_len) / stride + 2)
-                        self.head.append(FlattenHead(configs.enc_in, head_nf, configs.pred_len, head_dropout=configs.dropout))
+                        seq_len_ = configs.seq_len // (configs.down_sampling_window ** i)
+                        stride, padding, patch_num, patch_len = calculate_patch_num(seq_len_)
+                        if self.gym_network_architecture == 'Transformer':
+                            # from PatchTST
+                            enc_embedding_ = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                            padding=padding, dropout=configs.dropout)
+                            # todo: PatchTST is encoder-only
+                            dec_embedding_ = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                            padding=padding, dropout=configs.dropout)
+                        else:
+                            enc_embedding_ = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                                   padding=padding, dropout=configs.dropout)
+                            dec_embedding_ = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                                   padding=padding, dropout=configs.dropout)
+                        self.enc_embedding.append(enc_embedding_)
+                        self.dec_embedding.append(dec_embedding_)
+                        self.head.append(FlattenHead(configs.enc_in, configs.d_model * patch_num, configs.pred_len, head_dropout=configs.dropout))
+                    
+                    self.enc_embedding = nn.ModuleList(self.enc_embedding)
+                    self.dec_embedding = nn.ModuleList(self.dec_embedding)
                     self.head = nn.ModuleList(self.head)
             else:
                 raise NotImplementedError
@@ -326,21 +338,21 @@ class Model(nn.Module):
                 Attention = DSAttention
 
                 if self.gym_series_sampling:
-                    self.tau_learner = nn.ModuleList([Projector(enc_in=configs.enc_in, seq_len=configs.seq_len // (configs.down_sampling_window ** i),
+                    self.tau_learner = nn.ModuleList([Projector(enc_in=1 if self.gym_channel_independent else configs.enc_in, seq_len=configs.seq_len // (configs.down_sampling_window ** i),
                                                                 hidden_dims=configs.p_hidden_dims,
                                                                 hidden_layers=configs.p_hidden_layers,
                                                                 output_dim=1)
                                                                 for i in range(configs.down_sampling_layers + 1)])
-                    self.delta_learner = nn.ModuleList([Projector(enc_in=configs.enc_in, seq_len=configs.seq_len // (configs.down_sampling_window ** i),
+                    self.delta_learner = nn.ModuleList([Projector(enc_in=1 if self.gym_channel_independent else configs.enc_in, seq_len=configs.seq_len // (configs.down_sampling_window ** i),
                                                                   hidden_dims=configs.p_hidden_dims,
                                                                   hidden_layers=configs.p_hidden_layers,
                                                                   output_dim=configs.seq_len // (configs.down_sampling_window ** i)) 
                                                                   for i in range(configs.down_sampling_layers + 1)])             
                 
                 else:
-                    self.tau_learner = Projector(enc_in=configs.enc_in, seq_len=configs.seq_len, hidden_dims=configs.p_hidden_dims,
+                    self.tau_learner = Projector(enc_in=1 if self.gym_channel_independent else configs.enc_in, seq_len=configs.seq_len, hidden_dims=configs.p_hidden_dims,
                                                 hidden_layers=configs.p_hidden_layers, output_dim=1)
-                    self.delta_learner = Projector(enc_in=configs.enc_in, seq_len=configs.seq_len,
+                    self.delta_learner = Projector(enc_in=1 if self.gym_channel_independent else configs.enc_in, seq_len=configs.seq_len,
                                                 hidden_dims=configs.p_hidden_dims, hidden_layers=configs.p_hidden_layers,
                                                 output_dim=configs.seq_len)
             else:
@@ -474,6 +486,20 @@ class Model(nn.Module):
         # series normalization
         if isinstance(x_enc, list):
             x_enc = [self.series_norm[i](_, 'norm') for i, _ in enumerate(x_enc)]
+        else:
+            x_enc = self.series_norm(x_enc, 'norm')
+
+        if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
+            # BxSxD -> (BxD)xSx1
+            if isinstance(x_enc, list):
+                x_enc = [_.permute(0, 2, 1).contiguous().reshape(B * D, _.shape[1], 1) for _ in x_enc]
+                if x_mark_enc is not None: x_mark_enc = [_.repeat(D, 1, 1) for _ in x_mark_enc]
+            else:
+                x_enc = x_enc.permute(0, 2, 1).contiguous().reshape(B * D, S, 1)
+                if x_mark_enc is not None: x_mark_enc = x_mark_enc.repeat(D, 1, 1)
+
+        # learn tau and delta for non-stationary attention (if necessary)
+        if isinstance(x_enc, list):
             if self.gym_attn == 'destationary-attention':
                 tau, delta = [], []
                 for i, x_enc_ in enumerate(x_enc):
@@ -491,19 +517,9 @@ class Model(nn.Module):
                 tau = self.tau_learner(x_enc.clone().detach(), std_enc).exp() # x_raw
                 # B x S x E, B x 1 x E -> B x S
                 delta = self.delta_learner(x_enc.clone().detach(), mean_enc)
-                print(f'the shape of tau: {tau.shape}, delta: {delta.shape}')
+                if verbose: print(f'the shape of tau: {tau.shape}, delta: {delta.shape}')
             else:
                 tau, delta = None, None
-            x_enc = self.series_norm(x_enc, 'norm')
-
-        if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
-            # BxSxD -> (BxD)xSx1
-            if isinstance(x_enc, list):
-                x_enc = [_.permute(0, 2, 1).contiguous().reshape(B * D, _.shape[1], 1) for _ in x_enc]
-                if x_mark_enc is not None: x_mark_enc = [_.repeat(D, 1, 1) for _ in x_mark_enc]
-            else:
-                x_enc = x_enc.permute(0, 2, 1).contiguous().reshape(B * D, S, 1)
-                if x_mark_enc is not None: x_mark_enc = x_mark_enc.repeat(D, 1, 1)
         
         # series decomposition (todo整理代码, 目前还是太复杂了)
         if self.series_decompsition:
@@ -581,7 +597,6 @@ class Model(nn.Module):
                     raise NotImplementedError
 
                 # seasonal + trend
-                print(f'the shape of enc_out_seasonal: {enc_out_seasonal.shape}, enc_out_trend: {enc_out_trend.shape}')
                 enc_out_seasonal, _ = self.encoder_seasonal(enc_out_seasonal, attn_mask=None, tau=tau, delta=delta)
                 enc_out_trend, _ = self.encoder_trend(enc_out_trend, attn_mask=None, tau=tau, delta=delta)
                 enc_out = enc_out_seasonal + enc_out_trend

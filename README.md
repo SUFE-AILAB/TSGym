@@ -60,6 +60,7 @@
 - MLP-based multi-resolution mixing
 - data augmentation
 - bug: seq_len=192和series-patching
+- 有些module无法组合: 例如inverted-encoding + series-patching
 
 ## Experiment Results
 ![alt text](image.png)
