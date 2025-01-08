@@ -232,8 +232,8 @@ class Model(nn.Module):
                                                                padding=padding, dropout=configs.dropout)
                     self.dec_embedding = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
                                                                padding=padding, dropout=configs.dropout)
-                self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 2)
-                self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout)
+                # self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 2)
+                self.head = FlattenHead(configs.enc_in, configs.d_model * patch_num, configs.pred_len, head_dropout=configs.dropout)
 
                 if self.series_sampling:
                     self.enc_embedding, self.dec_embedding, self.head = torch.nn.ModuleList(), torch.nn.ModuleList(), torch.nn.ModuleList()
