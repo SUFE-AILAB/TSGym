@@ -171,3 +171,6 @@ scripts/augmentation/
 run_anylearn.py
 environment.txt
 scripts/
+meta_learner_cc/checkpoint
+*.npz
+*.csv

@@ -1,0 +1,210 @@
+nohup: ignoring input
+  0%|          | 0/25 [00:00<?, ?it/s]  4%|▍         | 1/25 [00:07<03:11,  7.99s/it]  4%|▍         | 1/25 [00:08<03:28,  8.69s/it]
+number of gpu: 8,cuda name: NVIDIA A100-PCIE-40GB,GPU is on
+./checkpoint/checkpoint_mlp_mse_large_0/checkpoint
+Epoch: 1 | Train Loss:nan.
+lr = 0.0004000000
+Updating learning rate to 0.0003999999999999993
+Epoch: 2 | Train Loss:nan.
+Updating learning rate to 0.00019999999999999966
+Epoch: 3 | Train Loss:nan.
+Updating learning rate to 9.999999999999983e-05
+Epoch: 4 | Train Loss:nan.
+Updating learning rate to 4.9999999999999914e-05
+Epoch: 5 | Train Loss:nan.
+Updating learning rate to 2.4999999999999957e-05
+Epoch: 6 | Train Loss:nan.
+Updating learning rate to 1.2499999999999979e-05
+Epoch: 7 | Train Loss:nan.
+Updating learning rate to 6.249999999999989e-06
+Epoch: 8 | Train Loss:nan.
+Updating learning rate to 3.1249999999999946e-06
+Epoch: 9 | Train Loss:nan.
+Updating learning rate to 1.5624999999999973e-06
+Epoch: 10 | Train Loss:nan.
+Updating learning rate to 7.812499999999987e-07
+Epoch: 11 | Train Loss:nan.
+Updating learning rate to 3.9062499999999933e-07
+Epoch: 12 | Train Loss:nan.
+Updating learning rate to 1.9531249999999967e-07
+Epoch: 13 | Train Loss:nan.
+Updating learning rate to 9.765624999999983e-08
+Epoch: 14 | Train Loss:nan.
+Updating learning rate to 4.8828124999999916e-08
+Epoch: 15 | Train Loss:nan.
+Updating learning rate to 2.4414062499999958e-08
+Epoch: 16 | Train Loss:nan.
+Updating learning rate to 1.2207031249999979e-08
+Epoch: 17 | Train Loss:nan.
+Updating learning rate to 6.1035156249999895e-09
+Epoch: 18 | Train Loss:nan.
+Updating learning rate to 3.0517578124999948e-09
+Epoch: 19 | Train Loss:nan.
+Updating learning rate to 1.5258789062499974e-09
+Epoch: 20 | Train Loss:nan.
+Updating learning rate to 7.629394531249987e-10
+number of gpu: 8,cuda name: NVIDIA A100-PCIE-40GB,GPU is on
+./checkpoint/checkpoint_mlp_mse_large_0/checkpoint
+model checkpoint file exist!
+Traceback (most recent call last):
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 59, in _wrapfunc
+    return bound(*args, **kwds)
+TypeError: argmin() got an unexpected keyword argument 'axis'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 176, in <module>
+    run(metrics,seed,model_name,model_save_path,dl_model_configs,suffix)
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 138, in run
+    y_pred_dict = run_meta_dl(result_df.copy(),test_dataset,seed,scaler_meta_feature,metrics,model_name,model_save_path,dl_model_configs)
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 76, in run_meta_dl
+    y_pred_dict[pl] = y_test_dict[pl][np.argmin(y_pred_dict[pl])]      
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 1325, in argmin
+    return _wrapfunc(a, 'argmin', axis=axis, out=out, **kwds)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 68, in _wrapfunc
+    return _wrapit(obj, method, *args, **kwds)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 45, in _wrapit
+    result = getattr(asarray(obj), method)(*args, **kwds)
+ValueError: attempt to get argmin of an empty sequence
+nohup: ignoring input
+  0%|          | 0/25 [00:00<?, ?it/s]  4%|▍         | 1/25 [00:08<03:15,  8.17s/it]  4%|▍         | 1/25 [00:08<03:32,  8.86s/it]
+number of gpu: 8,cuda name: NVIDIA A100-PCIE-40GB,GPU is on
+./checkpoint/checkpoint_mlp_mse_large_0/checkpoint
+Epoch: 1 | Train Loss:nan.
+lr = 0.0004000000
+Updating learning rate to 0.0003999999999999993
+Epoch: 2 | Train Loss:nan.
+Updating learning rate to 0.00019999999999999966
+Epoch: 3 | Train Loss:nan.
+Updating learning rate to 9.999999999999983e-05
+Epoch: 4 | Train Loss:nan.
+Updating learning rate to 4.9999999999999914e-05
+Epoch: 5 | Train Loss:nan.
+Updating learning rate to 2.4999999999999957e-05
+Epoch: 6 | Train Loss:nan.
+Updating learning rate to 1.2499999999999979e-05
+Epoch: 7 | Train Loss:nan.
+Updating learning rate to 6.249999999999989e-06
+Epoch: 8 | Train Loss:nan.
+Updating learning rate to 3.1249999999999946e-06
+Epoch: 9 | Train Loss:nan.
+Updating learning rate to 1.5624999999999973e-06
+Epoch: 10 | Train Loss:nan.
+Updating learning rate to 7.812499999999987e-07
+Epoch: 11 | Train Loss:nan.
+Updating learning rate to 3.9062499999999933e-07
+Epoch: 12 | Train Loss:nan.
+Updating learning rate to 1.9531249999999967e-07
+Epoch: 13 | Train Loss:nan.
+Updating learning rate to 9.765624999999983e-08
+Epoch: 14 | Train Loss:nan.
+Updating learning rate to 4.8828124999999916e-08
+Epoch: 15 | Train Loss:nan.
+Updating learning rate to 2.4414062499999958e-08
+Epoch: 16 | Train Loss:nan.
+Updating learning rate to 1.2207031249999979e-08
+Epoch: 17 | Train Loss:nan.
+Updating learning rate to 6.1035156249999895e-09
+Epoch: 18 | Train Loss:nan.
+Updating learning rate to 3.0517578124999948e-09
+Epoch: 19 | Train Loss:nan.
+Updating learning rate to 1.5258789062499974e-09
+Epoch: 20 | Train Loss:nan.
+Updating learning rate to 7.629394531249987e-10
+number of gpu: 8,cuda name: NVIDIA A100-PCIE-40GB,GPU is on
+./checkpoint/checkpoint_mlp_mse_large_0/checkpoint
+model checkpoint file exist!
+Traceback (most recent call last):
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 59, in _wrapfunc
+    return bound(*args, **kwds)
+TypeError: argmin() got an unexpected keyword argument 'axis'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 176, in <module>
+    run(metrics,seed,model_name,model_save_path,dl_model_configs,suffix)
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 138, in run
+    y_pred_dict = run_meta_dl(result_df.copy(),test_dataset,seed,scaler_meta_feature,metrics,model_name,model_save_path,dl_model_configs)
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 76, in run_meta_dl
+    y_pred_dict[pl] = y_test_dict[pl][np.argmin(y_pred_dict[pl])]      
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 1325, in argmin
+    return _wrapfunc(a, 'argmin', axis=axis, out=out, **kwds)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 68, in _wrapfunc
+    return _wrapit(obj, method, *args, **kwds)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/numpy/core/fromnumeric.py", line 45, in _wrapit
+    result = getattr(asarray(obj), method)(*args, **kwds)
+ValueError: attempt to get argmin of an empty sequence
+nohup: ignoring input
+  0%|          | 0/25 [00:00<?, ?it/s]  0%|          | 0/25 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 179, in <module>
+    run(metrics,seed,model_name,model_save_path,dl_model_configs,suffix)
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 138, in run
+    y_pred_dict = run_meta_ml(result_df.copy(),test_dataset,seed,scaler_meta_feature,metrics,model_name,model_save_path)
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 94, in run_meta_ml
+    X_test_dict[row['pred_len']].append(dataset_meta_feature)
+KeyError: 24
+nohup: ignoring input
+  0%|          | 0/24 [00:00<?, ?it/s]  0%|          | 0/24 [00:01<?, ?it/s]
+Traceback (most recent call last):
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 180, in <module>
+    run(metrics,seed,model_name,model_save_path,dl_model_configs,suffix)
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 139, in run
+    y_pred_dict = run_meta_ml(result_df.copy(),test_dataset,seed,scaler_meta_feature,metrics,model_name,model_save_path)
+  File "/data/coding/chaochuan/cc/meta_learner/run_meta.py", line 101, in run_meta_ml
+    model = get_model(model_name).fit(X_train,y_train)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 726, in inner_f
+    return func(**kwargs)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/sklearn.py", line 1081, in fit
+    train_dmatrix, evals = _wrap_evaluation_matrices(
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/sklearn.py", line 596, in _wrap_evaluation_matrices
+    train_dmatrix = create_dmatrix(
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/sklearn.py", line 1003, in _create_dmatrix
+    return QuantileDMatrix(
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 726, in inner_f
+    return func(**kwargs)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 1573, in __init__
+    self._init(
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 1632, in _init
+    it.reraise()
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 569, in reraise
+    raise exc  # pylint: disable=raising-bad-type
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 550, in _handle_exception
+    return fn()
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 637, in <lambda>
+    return self._handle_exception(lambda: self.next(input_data), 0)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/data.py", line 1402, in next
+    input_data(**self.kwargs)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 726, in inner_f
+    return func(**kwargs)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 626, in input_data
+    self.proxy.set_info(
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 726, in inner_f
+    return func(**kwargs)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 954, in set_info
+    self.set_label(label)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 1092, in set_label
+    dispatch_meta_backend(self, label, "label", "float")
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/data.py", line 1332, in dispatch_meta_backend
+    _meta_from_list(data, name, dtype, handle)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/data.py", line 1286, in _meta_from_list
+    _meta_from_numpy(data_np, field, dtype, handle)
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/data.py", line 1279, in _meta_from_numpy
+    _check_call(_LIB.XGDMatrixSetInfoFromInterface(handle, c_str(field), interface_str))
+  File "/data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/core.py", line 284, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [17:26:02] /workspace/src/data/data.cc:514: Check failed: valid: Label contains NaN, infinity or a value too large.
+Stack trace:
+  [bt] (0) /data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/lib/libxgboost.so(+0x22dcbc) [0x7f29f3c2dcbc]
+  [bt] (1) /data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/lib/libxgboost.so(+0x4b3b89) [0x7f29f3eb3b89]
+  [bt] (2) /data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/lib/libxgboost.so(+0x4b53c0) [0x7f29f3eb53c0]
+  [bt] (3) /data/miniconda/envs/torch/lib/python3.10/site-packages/xgboost/lib/libxgboost.so(XGDMatrixSetInfoFromInterface+0xb2) [0x7f29f3b35032]
+  [bt] (4) /data/miniconda/envs/torch/lib/python3.10/lib-dynload/../../libffi.so.8(+0xa052) [0x7f2bc491d052]
+  [bt] (5) /data/miniconda/envs/torch/lib/python3.10/lib-dynload/../../libffi.so.8(+0x8925) [0x7f2bc491b925]
+  [bt] (6) /data/miniconda/envs/torch/lib/python3.10/lib-dynload/../../libffi.so.8(ffi_call+0xde) [0x7f2bc491c06e]
+  [bt] (7) /data/miniconda/envs/torch/lib/python3.10/lib-dynload/_ctypes.cpython-310-x86_64-linux-gnu.so(+0x91e7) [0x7f2b23eaa1e7]
+  [bt] (8) /data/miniconda/envs/torch/lib/python3.10/lib-dynload/_ctypes.cpython-310-x86_64-linux-gnu.so(+0x869b) [0x7f2b23ea969b]
+
+

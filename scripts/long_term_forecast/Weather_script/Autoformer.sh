@@ -1,5 +1,3 @@
-
-
 model_name=Autoformer
 
 python3 -u run.py \
