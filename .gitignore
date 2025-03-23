@@ -170,7 +170,7 @@ result_anomaly_detection.txt
 scripts/augmentation/
 run_anylearn.py
 environment.txt
-scripts/
+# scripts/
 meta_learner_cc/checkpoint
 *.npz
 *.csv
