@@ -18,12 +18,21 @@ class Meta():
                  seed: int=42,
                  task_name: str='long_term_forecast',
                  early_stopping=True,
-                 batch_size=128):
+                 batch_size=128,
+                 d_model=64,
+                 weight_decay=0.01,
+                 lr=0.001,
+                 epochs=500):
         self.seed = seed
         self.task_name = task_name
         self.utils = Utils()
         self.early_stopping = early_stopping
         self.batch_size = batch_size
+
+        self.d_model = d_model
+        self.weight_decay = weight_decay
+        self.lr = lr
+        self.epochs = epochs
 
     def components_processing(self, task_name, test_dataset,
                               components_path='./meta/components.yaml',
@@ -47,6 +56,11 @@ class Meta():
         datasets_train = [_ for _ in datasets if _ != test_dataset]
         dataset_test = [_ for _ in datasets if _ == test_dataset][0]
 
+        # datasets_train = [test_dataset]
+        # dataset_test = test_dataset
+
+        print(f'training dataset: {datasets_train}, testing dataset: {dataset_test}')
+
         # load components
         with open(components_path, 'r') as f:
             self.components = yaml.safe_load(f)
@@ -55,6 +69,7 @@ class Meta():
         # load result, metrics: mae, mse (√), rmse, mape, mspe
         metric_matrix_train, metric_matrix_test = {}, {}
         metric_matrix_train = {_: np.load(f'{result_path}/{_}/metrics.npy')[1] for _ in file_list if dataset_test not in _}
+        # metric_matrix_train = {_: np.load(f'{result_path}/{_}/metrics.npy')[1] for _ in file_list if dataset_test in _}
         metric_matrix_test = {_: np.load(f'{result_path}/{_}/metrics.npy')[1] for _ in file_list if dataset_test in _}
 
         # training set
@@ -107,7 +122,7 @@ class Meta():
             # NA影响排序
             assert not trainset_targets_sub.isna().any()
             # to rank
-            trainset_targets.loc[idx, 'metric'] = np.argsort(np.argsort(trainset_targets_sub)) / trainset_targets_sub.shape[0]
+            trainset_targets.loc[idx, 'metric'] = np.argsort(np.argsort(trainset_targets_sub)).astype(np.float32) / trainset_targets_sub.shape[0]
 
 
         # to tensor
@@ -117,6 +132,8 @@ class Meta():
         testset_components, testset_meta_features, testset_targets = (torch.from_numpy(np.stack(testset_components)).long(),
                                                                       torch.from_numpy(np.stack(testset_meta_features)).float(),
                                                                       torch.from_numpy(np.stack(testset_targets)).float())
+        print(trainset_components.shape, trainset_meta_features.shape, trainset_targets.shape)
+        print(testset_components.shape, testset_meta_features.shape, testset_targets.shape)
         
         # to device
         self.device = self.utils.get_device()
@@ -153,16 +170,17 @@ class Meta():
     def meta_init(self):
         # set seed for reproductive results
         self.utils.set_seed(self.seed)
-        self.model = meta_predictor(n_col=[len(_) for _ in self.components.values()])
+        self.model = meta_predictor(n_col=[len(_) for _ in self.components.values()], d_model=self.d_model)
         self.model.to(self.device)
-        self.optimizer = self.model.configure_optimizers(weight_decay=0.01, learning_rate=0.001, device_type='cuda')
+        self.optimizer = self.model.configure_optimizers(weight_decay=self.weight_decay, learning_rate=self.lr, device_type='cuda')
         # self.criterion = nn.MSELoss()
         self.criterion = self.loss_pearson
 
     def meta_fit(self, best_metric=999, es_count=0, es_tol=5):
-        for epoch in range(50):
-            loss_batch = []
-            for i, batch in tqdm(enumerate(self.trainloader)):
+        pred_ranks_for_true_topk_epoch, true_ranks_for_pred_topk_epoch = [], []
+        for epoch in tqdm(range(self.epochs)):
+            loss_batch = []; self.model.train()
+            for batch in self.trainloader:
                 component, meta_feature, y_true = batch
 
                 # clear gradient
@@ -180,19 +198,28 @@ class Meta():
                 self.optimizer.step()
 
             print(f'Epoch {epoch} loss: {np.mean(loss_batch)}')
-            if self.valloader is not None:
-                val_loss = self.meta_evaluate()
-                if val_loss < best_metric:
-                    print(f'best val metric: {best_metric}, current val metric: {val_loss}, continue training..')
-                    best_metric = val_loss
-                    es_count = 0
-                else:
-                    es_count += 1
+            # if self.valloader is not None:
+            #     val_loss = self.meta_evaluate()
+            #     if val_loss < best_metric:
+            #         print(f'best val metric: {best_metric}, current val metric: {val_loss}, continue training..')
+            #         best_metric = val_loss
+            #         es_count = 0
+            #     else:
+            #         es_count += 1
 
-                if es_count > es_tol:
-                    print(f'Early stopping at epoch: {epoch}')
-                    break
+            #     if es_count > es_tol:
+            #         print(f'Early stopping at epoch: {epoch}')
+            #         break
+
+            if self.testloader is not None:
+                pred_ranks_for_true_topk, true_ranks_for_pred_topk = self.meta_predict()
+                pred_ranks_for_true_topk_epoch.append(pred_ranks_for_true_topk)
+                true_ranks_for_pred_topk_epoch.append(true_ranks_for_pred_topk)
     
+        np.savez_compressed(f'./meta/results/perf_epoch_{self.test_dataset}.npz',
+                            pred_ranks_for_true_topk_epoch=pred_ranks_for_true_topk_epoch,
+                            true_ranks_for_pred_topk_epoch=true_ranks_for_pred_topk_epoch)
+
     @torch.no_grad()
     def meta_evaluate(self):
         self.model.eval(); print(f'validating model...') # eval mode
@@ -208,7 +235,6 @@ class Meta():
         y_trues = torch.hstack(y_trues)
 
         loss = self.criterion(y_preds, y_trues)
-        self.model.train() # back to train mode
         return loss.item()
 
     @torch.no_grad()
@@ -233,14 +259,16 @@ class Meta():
         # 指标1：真实误差最小的top5在预测中的排名
         true_topk_indices = np.argsort(y_trues)[:topk]  # 真实误差最小的topk个索引
         pred_ranks_for_true_topk = pred_ranks[true_topk_indices]
+        print(f"{self.test_dataset}: 真实最小Topk在预测中的排名: {pred_ranks_for_true_topk}, 总数: {len(pred_ranks)}")
         logger.info(f"{self.test_dataset}: 真实最小Topk在预测中的排名: {pred_ranks_for_true_topk}, 总数: {len(pred_ranks)}")
 
         # 指标2：预测误差最小的top5在真实中的排名
         pred_topk_indices = np.argsort(y_preds)[:topk]  # 预测误差最小的topk个索引
         true_ranks_for_pred_topk = true_ranks[pred_topk_indices]
-        logger.info(f"{self.test_dataset}: 预测最小Topk在真实中的排名: {true_ranks_for_pred_topk}, 总数: {len(true_ranks)}")
+        print(f"{self.test_dataset}: 预测最小Topk在真实中的排名: {true_ranks_for_pred_topk}, 总数: {len(true_ranks)}\n")
+        logger.info(f"{self.test_dataset}: 预测最小Topk在真实中的排名: {true_ranks_for_pred_topk}, 总数: {len(true_ranks)}\n")
 
-        return None
+        return np.mean(pred_ranks_for_true_topk), np.mean(true_ranks_for_pred_topk)
 
 meta = Meta(); task_name = 'long_term_forecast'
 file_list = [_ for _ in os.listdir('./resultsGym') if task_name in _]
