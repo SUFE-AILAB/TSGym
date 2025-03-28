@@ -1,6 +1,5 @@
 #!/bin/bash
-# export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-export CUDA_VISIBLE_DEVICES=2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 # 指定目录路径
 dir_path="./scripts/long_term_forecast/ECL_script/gym"

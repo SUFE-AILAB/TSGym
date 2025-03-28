@@ -5,13 +5,13 @@ import inspect
 # meta classifier by using MetaOD feature extractor
 # change the embedding unlearnable?
 class meta_predictor(nn.Module):
-    def __init__(self, n_col, embedding_dim=20, d_model=64, dropout=0.1):
+    def __init__(self, n_col, embed_dim_meta_feature=156, d_model=64, dropout=0.1):
         super(meta_predictor, self).__init__()
-
+        embedding_dim = embed_dim_meta_feature // len(n_col)
         self.embeddings = nn.ModuleList([nn.Embedding(int(_), embedding_dim) for _ in n_col])
         embed_dim_component = len(n_col) * embedding_dim
-        embed_dim_meta_feature = 156
-
+        print(f"embed_dim_component (total): {embed_dim_component}, embed_dim_meta_feature: {embed_dim_meta_feature}")
+        
         self.out = nn.Sequential(nn.Linear(embed_dim_component + embed_dim_meta_feature, d_model),
                                  nn.LayerNorm(d_model),
                                  nn.LeakyReLU(),

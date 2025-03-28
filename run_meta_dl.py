@@ -17,7 +17,7 @@ class Meta():
     def __init__(self,
                  seed: int=42,
                  task_name: str='long_term_forecast',
-                 early_stopping=True,
+                 early_stopping=False,
                  batch_size=128,
                  d_model=64,
                  weight_decay=0.01,
@@ -37,7 +37,7 @@ class Meta():
     def components_processing(self, task_name, test_dataset,
                               components_path='./meta/components.yaml',
                               result_path='./resultsGym',
-                              meta_feature_path='./meta_learner_cc/meta_feature_copy/meta_feature'):
+                              meta_feature_path='/data/coding/chaochuan/TSGym_metafeature/meta_feature/num_windows_1/train'):
 
         self.test_dataset = test_dataset
         
@@ -45,13 +45,29 @@ class Meta():
         datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
 
         # load meta features
-        self.meta_features = {dataset: np.load(f'{meta_feature_path}/meta_feature_{dataset}.npz', allow_pickle=True)['meta_feature'] for dataset in datasets}
-        # z-score on different datasets
-        mu = np.nanmean(np.stack(self.meta_features.values()), axis=0)
-        std = np.nanstd(np.stack(self.meta_features.values()), axis=0)
-        self.meta_features = {k: (v - mu) / (std + 1e-6) for k,v in self.meta_features.items()}
-        assert (~np.isnan(np.stack(self.meta_features.values()))).all()
+        name_dict = {dataset: dataset for dataset in datasets}
+        name_dict['ECL'] = 'electricity'
+        name_dict['Exchange'] = 'exchange_rate'
+        name_dict['ili'] = 'illness'
+        self.meta_features = {dataset: np.load(f'{meta_feature_path}/meta_feature_{name_dict[dataset]}_1_train.npz',
+                                               allow_pickle=True)['meta_feature'] for dataset in datasets}
+        
+        # todo: 利用全部多元序列的统计量信息(而不是简单平均)
+        # self.meta_features = {k:np.mean(v, axis=0).squeeze() for k,v in self.meta_features.items()}
+        self.meta_features = {k: v[0, :] for k,v in self.meta_features.items()} # mean
+        # self.meta_features = {k: v.flatten() for k,v in self.meta_features.items()}
 
+        # clip values
+        self.meta_features = {k: np.clip(v, -1e4, 1e4) for k, v in self.meta_features.items()}
+        
+        assert len(set([v.shape for v in self.meta_features.values()])) == 1
+        self.meta_feature_dim = list(self.meta_features.values())[0].shape[0]
+
+        # z-score on different datasets
+        mu = np.nanmean(np.stack(list(self.meta_features.values())), axis=0)
+        std = np.nanstd(np.stack(list(self.meta_features.values())), axis=0)
+        self.meta_features = {k: (v - mu) / (std + 1e-6) for k,v in self.meta_features.items()}
+        assert (~np.isnan(np.stack(list(self.meta_features.values())))).all()
 
         datasets_train = [_ for _ in datasets if _ != test_dataset]
         dataset_test = [_ for _ in datasets if _ == test_dataset][0]
@@ -122,7 +138,7 @@ class Meta():
             # NA影响排序
             assert not trainset_targets_sub.isna().any()
             # to rank
-            trainset_targets.loc[idx, 'metric'] = np.argsort(np.argsort(trainset_targets_sub)).astype(np.float32) / trainset_targets_sub.shape[0]
+            trainset_targets.loc[idx, 'metric'] = (np.argsort(np.argsort(trainset_targets_sub)).astype(np.float32) + 1) / trainset_targets_sub.shape[0]
 
 
         # to tensor
@@ -170,14 +186,15 @@ class Meta():
     def meta_init(self):
         # set seed for reproductive results
         self.utils.set_seed(self.seed)
-        self.model = meta_predictor(n_col=[len(_) for _ in self.components.values()], d_model=self.d_model)
+        self.model = meta_predictor(n_col=[len(_) for _ in self.components.values()], d_model=self.d_model,
+                                    embed_dim_meta_feature=self.meta_feature_dim)
         self.model.to(self.device)
         self.optimizer = self.model.configure_optimizers(weight_decay=self.weight_decay, learning_rate=self.lr, device_type='cuda')
         # self.criterion = nn.MSELoss()
         self.criterion = self.loss_pearson
 
     def meta_fit(self, best_metric=999, es_count=0, es_tol=5):
-        pred_ranks_for_true_topk_epoch, true_ranks_for_pred_topk_epoch = [], []
+        pred_ranks_for_true_topk_epoch, true_ranks_for_pred_topk_epoch, top1_perf_epoch = [], [], []
         for epoch in tqdm(range(self.epochs)):
             loss_batch = []; self.model.train()
             for batch in self.trainloader:
@@ -212,13 +229,16 @@ class Meta():
             #         break
 
             if self.testloader is not None:
-                pred_ranks_for_true_topk, true_ranks_for_pred_topk = self.meta_predict()
+                pred_ranks_for_true_topk, true_ranks_for_pred_topk, total_num, top1_perf = self.meta_predict()
                 pred_ranks_for_true_topk_epoch.append(pred_ranks_for_true_topk)
                 true_ranks_for_pred_topk_epoch.append(true_ranks_for_pred_topk)
-    
+                top1_perf_epoch.append(top1_perf)
+
         np.savez_compressed(f'./meta/results/perf_epoch_{self.test_dataset}.npz',
                             pred_ranks_for_true_topk_epoch=pred_ranks_for_true_topk_epoch,
-                            true_ranks_for_pred_topk_epoch=true_ranks_for_pred_topk_epoch)
+                            true_ranks_for_pred_topk_epoch=true_ranks_for_pred_topk_epoch,
+                            total_num=total_num,
+                            top1_perf_epoch=top1_perf_epoch)
 
     @torch.no_grad()
     def meta_evaluate(self):
@@ -250,6 +270,7 @@ class Meta():
         # validation loss
         y_preds = torch.hstack(y_preds).cpu().numpy()
         y_trues = torch.hstack(y_trues).cpu().numpy()
+        top1_perf = y_trues[np.argmin(y_preds)]
 
         # 计算全局排名（升序排列，数值越小排名越高）
         pred_ranks = np.argsort(np.argsort(y_preds)) + 1  # 预测误差的升序排名
@@ -259,23 +280,25 @@ class Meta():
         # 指标1：真实误差最小的top5在预测中的排名
         true_topk_indices = np.argsort(y_trues)[:topk]  # 真实误差最小的topk个索引
         pred_ranks_for_true_topk = pred_ranks[true_topk_indices]
-        print(f"{self.test_dataset}: 真实最小Topk在预测中的排名: {pred_ranks_for_true_topk}, 总数: {len(pred_ranks)}")
+        # print(f"{self.test_dataset}: 真实最小Topk在预测中的排名: {pred_ranks_for_true_topk}, 总数: {len(pred_ranks)}")
         logger.info(f"{self.test_dataset}: 真实最小Topk在预测中的排名: {pred_ranks_for_true_topk}, 总数: {len(pred_ranks)}")
 
         # 指标2：预测误差最小的top5在真实中的排名
         pred_topk_indices = np.argsort(y_preds)[:topk]  # 预测误差最小的topk个索引
         true_ranks_for_pred_topk = true_ranks[pred_topk_indices]
-        print(f"{self.test_dataset}: 预测最小Topk在真实中的排名: {true_ranks_for_pred_topk}, 总数: {len(true_ranks)}\n")
+        # print(f"{self.test_dataset}: 预测最小Topk在真实中的排名: {true_ranks_for_pred_topk}, 总数: {len(true_ranks)}\n")
         logger.info(f"{self.test_dataset}: 预测最小Topk在真实中的排名: {true_ranks_for_pred_topk}, 总数: {len(true_ranks)}\n")
+        assert len(pred_ranks) == len(true_ranks)
 
-        return np.mean(pred_ranks_for_true_topk), np.mean(true_ranks_for_pred_topk)
+        return np.mean(pred_ranks_for_true_topk), np.mean(true_ranks_for_pred_topk), len(pred_ranks), top1_perf
 
 meta = Meta(); task_name = 'long_term_forecast'
 file_list = [_ for _ in os.listdir('./resultsGym') if task_name in _]
 datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
 
-os.makedirs('logfiles', exist_ok=True)
-logging.basicConfig(filename=f'./logfiles/meta.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+os.makedirs('meta/logfiles', exist_ok=True)
+os.makedirs('meta/results', exist_ok=True)
+logging.basicConfig(filename=f'meta/logfiles/meta.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger()
 
 for test_dataset in datasets:
