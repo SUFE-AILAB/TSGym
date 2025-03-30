@@ -54,8 +54,8 @@ class Meta():
         
         # todo: 利用全部多元序列的统计量信息(而不是简单平均)
         # self.meta_features = {k:np.mean(v, axis=0).squeeze() for k,v in self.meta_features.items()}
-        self.meta_features = {k: v[0, :] for k,v in self.meta_features.items()} # mean
-        # self.meta_features = {k: v.flatten() for k,v in self.meta_features.items()}
+        # self.meta_features = {k: v[0, :] for k,v in self.meta_features.items()} # mean
+        self.meta_features = {k: v.flatten() for k,v in self.meta_features.items()}
 
         # clip values
         self.meta_features = {k: np.clip(v, -1e4, 1e4) for k, v in self.meta_features.items()}
@@ -102,7 +102,8 @@ class Meta():
                                    re.search(r'_df(\d+)_', k).group(1),
                                    re.search(r'_el(\d+)_', k).group(1),
                                    re.search(r'_epochs(\d+)_', k).group(1),
-                                   re.search(r'_lr([\d.]+)_', k).group(1)]
+                                   re.search(r'_lr([\d.]+)_', k).group(1),
+                                   re.search(r'lrs([^_]+)', k).group(1)]
             assert len(current_components) == len(self.components)
             current_components = {list(self.components.keys())[i]: v for i, v in enumerate(current_components)}
             current_components = [self.components[k][v] for k, v in current_components.items()]
@@ -122,7 +123,8 @@ class Meta():
                                    re.search(r'_df(\d+)_', k).group(1),
                                    re.search(r'_el(\d+)_', k).group(1),
                                    re.search(r'_epochs(\d+)_', k).group(1),
-                                   re.search(r'_lr([\d.]+)_', k).group(1)]
+                                   re.search(r'_lr([\d.]+)_', k).group(1),
+                                   re.search(r'lrs([^_]+)', k).group(1)]
             assert len(current_components) == len(self.components)
             current_components = {list(self.components.keys())[i]: v for i, v in enumerate(current_components)}
             current_components = [self.components[k][v] for k, v in current_components.items()]

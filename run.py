@@ -107,7 +107,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_gpu', type=bool, default=True, help='use gpu')
     parser.add_argument('--gpu', type=int, default=0, help='gpu')
     parser.add_argument('--use_multi_gpu', action='store_true', help='use multiple gpus', default=True)
-    parser.add_argument('--devices', type=str, default='0,1,2,3,4,5,6,7', help='device ids of multile gpus')
+    parser.add_argument('--devices', type=str, default='4,5,6,7', help='device ids of multile gpus')
 
     # de-stationary projector params
     parser.add_argument('--p_hidden_dims', type=int, nargs='+', default=[128, 128],
@@ -173,7 +173,7 @@ if __name__ == '__main__':
         for ii in range(args.itr):
             # setting record of experiments
             exp = Exp(args)  # set experiments
-            setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_{}'.format(
+            setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_lrs{}_{}'.format(
                 args.task_name,
                 args.model_id,
                 args.model,
@@ -194,7 +194,8 @@ if __name__ == '__main__':
                 args.distil,
                 args.des,
                 args.train_epochs,
-                args.learning_rate, ii)
+                args.learning_rate,
+                args.lradj, ii)
             
             folder_path = f'./results/' + setting + '/'
             folder_pathGym = f'./resultsGym/' + setting + '/'
@@ -212,7 +213,7 @@ if __name__ == '__main__':
                 print(f'The results already exist! skip...')
     else:
         ii = 0
-        setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_{}'.format(
+        setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_lrs{}_{}'.format(
             args.task_name,
             args.model_id,
             args.model,
@@ -233,7 +234,8 @@ if __name__ == '__main__':
             args.distil,
             args.des, 
             args.train_epochs,
-            args.learning_rate, ii)
+            args.learning_rate,
+            args.lradj, ii)
         
         folder_path = f'./results/' + setting + '/'
         folder_pathGym = f'./resultsGym/' + setting + '/'
