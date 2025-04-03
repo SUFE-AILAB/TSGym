@@ -15,17 +15,6 @@ from utils.augmentation import run_augmentation_single
 
 warnings.filterwarnings('ignore')
 
-def _acquire_device(args):
-    if args.use_gpu:
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu) if not args.use_multi_gpu else args.devices
-        # device = torch.device('cuda:{}'.format(self.args.gpu))
-        # print('Use GPU: cuda:{}'.format(self.args.gpu))
-        device = torch.device('cuda')
-        print('Use GPU: cuda:{}'.format(args.devices))
-    else:
-        device = torch.device('cpu')
-        print('Use CPU')
-    return device
 
 class Dataset_ETT_hour(Dataset):
     def __init__(self, args, root_path, flag='train', size=None,
@@ -33,7 +22,6 @@ class Dataset_ETT_hour(Dataset):
                  target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None):
         # size [seq_len, label_len, pred_len]
         self.args = args
-        self.device = _acquire_device(args)
         # info
         if size == None:
             self.seq_len = 24 * 4 * 4
@@ -101,10 +89,6 @@ class Dataset_ETT_hour(Dataset):
 
         self.data_stamp = data_stamp
 
-        self.data_x = torch.from_numpy(self.data_x).float().to(self.device)
-        self.data_y = torch.from_numpy(self.data_y).float().to(self.device)
-        self.data_stamp = torch.from_numpy(self.data_stamp).float().to(self.device)
-
     def __getitem__(self, index):
         s_begin = index
         s_end = s_begin + self.seq_len
@@ -124,13 +108,13 @@ class Dataset_ETT_hour(Dataset):
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
+
 class Dataset_ETT_minute(Dataset):
     def __init__(self, args, root_path, flag='train', size=None,
                  features='S', data_path='ETTm1.csv',
                  target='OT', scale=True, timeenc=0, freq='t', seasonal_patterns=None):
         # size [seq_len, label_len, pred_len]
         self.args = args
-        self.device = _acquire_device(args)
         # info
         if size == None:
             self.seq_len = 24 * 4 * 4
@@ -200,10 +184,6 @@ class Dataset_ETT_minute(Dataset):
 
         self.data_stamp = data_stamp
 
-        self.data_x = torch.from_numpy(self.data_x).float().to(self.device)
-        self.data_y = torch.from_numpy(self.data_y).float().to(self.device)
-        self.data_stamp = torch.from_numpy(self.data_stamp).float().to(self.device)
-
     def __getitem__(self, index):
         s_begin = index
         s_end = s_begin + self.seq_len
@@ -223,13 +203,13 @@ class Dataset_ETT_minute(Dataset):
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
+
 class Dataset_Custom(Dataset):
     def __init__(self, args, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
                  target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None):
         # size [seq_len, label_len, pred_len]
         self.args = args
-        self.device = _acquire_device(args)
         # info
         if size == None:
             self.seq_len = 24 * 4 * 4
@@ -263,13 +243,9 @@ class Dataset_Custom(Dataset):
         df_raw.columns: ['date', ...(other features), target feature]
         '''
         cols = list(df_raw.columns)
-        if self.features == 'M':
-            cols.remove('date')
-            df_raw = df_raw[['date'] + cols]    
-        else:
-            cols.remove(self.target)
-            cols.remove('date')
-            df_raw = df_raw[['date'] + cols + [self.target]]
+        cols.remove(self.target)
+        cols.remove('date')
+        df_raw = df_raw[['date'] + cols + [self.target]]
         num_train = int(len(df_raw) * 0.7)
         num_test = int(len(df_raw) * 0.2)
         num_vali = len(df_raw) - num_train - num_test
@@ -311,10 +287,6 @@ class Dataset_Custom(Dataset):
 
         self.data_stamp = data_stamp
 
-        self.data_x = torch.from_numpy(self.data_x).float().to(self.device)
-        self.data_y = torch.from_numpy(self.data_y).float().to(self.device)
-        self.data_stamp = torch.from_numpy(self.data_stamp).float().to(self.device)
-
     def __getitem__(self, index):
         s_begin = index
         s_end = s_begin + self.seq_len
@@ -333,6 +305,7 @@ class Dataset_Custom(Dataset):
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
+
 
 class Dataset_M4(Dataset):
     def __init__(self, args, root_path, flag='pred', size=None,
@@ -412,6 +385,7 @@ class Dataset_M4(Dataset):
             insample_mask[i, -len(ts):] = 1.0
         return insample, insample_mask
 
+
 class PSMSegLoader(Dataset):
     def __init__(self, args, root_path, win_size, step=1, flag="train"):
         self.flag = flag
@@ -458,6 +432,7 @@ class PSMSegLoader(Dataset):
                               index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
                 self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
 
+
 class MSLSegLoader(Dataset):
     def __init__(self, args, root_path, win_size, step=1, flag="train"):
         self.flag = flag
@@ -499,6 +474,7 @@ class MSLSegLoader(Dataset):
             return np.float32(self.test[
                               index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
                 self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+
 
 class SMAPSegLoader(Dataset):
     def __init__(self, args, root_path, win_size, step=1, flag="train"):
@@ -543,6 +519,7 @@ class SMAPSegLoader(Dataset):
                               index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
                 self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
 
+
 class SMDSegLoader(Dataset):
     def __init__(self, args, root_path, win_size, step=100, flag="train"):
         self.flag = flag
@@ -582,6 +559,7 @@ class SMDSegLoader(Dataset):
             return np.float32(self.test[
                               index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
                 self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+
 
 class SWATSegLoader(Dataset):
     def __init__(self, args, root_path, win_size, step=1, flag="train"):
@@ -633,6 +611,7 @@ class SWATSegLoader(Dataset):
             return np.float32(self.test[
                               index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
                 self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+
 
 class UEAloader(Dataset):
     """

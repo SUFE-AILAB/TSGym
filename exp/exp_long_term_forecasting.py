@@ -184,8 +184,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 adjust_learning_rate(model_optim, epoch + 1, self.args)
 
             # recording training computational cost
-            np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz',
-                                time=np.mean(epoch_time_avg))
+            # np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz',
+            #                     time=np.mean(epoch_time_avg))
             
             self.model.load_state_dict(torch.load(best_model_path))
 
@@ -198,9 +198,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             self.model.load_state_dict(torch.load(os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')))
 
         preds, trues = [], []
-        folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
+        # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
+        # if not os.path.exists(folder_path):
+        #     os.makedirs(folder_path)
 
         self.model.eval()
         with torch.no_grad():
@@ -248,7 +248,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
                     gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                     pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
-                    visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
+                    # visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
 
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
@@ -258,7 +258,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         print('test shape:', preds.shape, trues.shape)
 
         # result save
-        folder_path = f'./results{self.save_suffix}/' + setting + '/'
+        if 'TSGym' in setting:
+            if 'Transformer' in setting:
+                folder_path = f'./results{self.save_suffix}_transformer/' + setting + '/'
+            else:
+                folder_path = f'./results{self.save_suffix}_non_transformer/' + setting + '/'
+        else:
+            folder_path = f'./results{self.save_suffix}/' + setting + '/'
+
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         

@@ -165,11 +165,10 @@ checkpoints/
 checkpointsGym/
 results/
 resultsGym/
-resultsGym_20250329/
-scripts/
+resultsGym_non_transformer/
+resultsGym_transformer/
 result_long_term_forecast.txt
 result_anomaly_detection.txt
-scripts/augmentation/
 run_anylearn.py
 environment.txt
 # scripts/
@@ -178,3 +177,4 @@ meta_learner_cc/*
 *.csv
 nohup.out
 **/*.sh
+log

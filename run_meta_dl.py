@@ -22,7 +22,7 @@ class Meta():
                  d_model=64,
                  weight_decay=0.01,
                  lr=0.001,
-                 epochs=500):
+                 epochs=100):
         self.seed = seed
         self.task_name = task_name
         self.utils = Utils()
@@ -36,29 +36,35 @@ class Meta():
 
     def components_processing(self, task_name, test_dataset,
                               components_path='./meta/components.yaml',
-                              result_path='./resultsGym',
-                              meta_feature_path='/data/coding/chaochuan/TSGym_metafeature/meta_feature/num_windows_1/train'):
+                              result_path_non_transformer='./resultsGym_non_transformer',
+                              result_path_transformer='./resultsGym_transformer',
+                              meta_feature_path='./get_meta_feature/meta_features'):
 
         self.test_dataset = test_dataset
         
-        file_list = [_ for _ in os.listdir(result_path) if task_name in _]
+        file_list_non_transformer = [_ for _ in os.listdir(result_path_non_transformer) if task_name in _]
+        file_list_transformer = [_ for _ in os.listdir(result_path_transformer) if task_name in _]
+        print(f'number of non-transformer results: {len(file_list_non_transformer)}')
+        print(f'number of transformer results: {len(file_list_transformer)}')
+
+        # file_list = file_list_non_transformer + file_list_transformer
+        file_list = file_list_non_transformer
         datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
 
         # load meta features
         name_dict = {dataset: dataset for dataset in datasets}
         name_dict['ECL'] = 'electricity'
         name_dict['Exchange'] = 'exchange_rate'
-        name_dict['ili'] = 'illness'
-        self.meta_features = {dataset: np.load(f'{meta_feature_path}/meta_feature_{name_dict[dataset]}_1_train.npz',
+        name_dict['ili'] = 'national_illness'
+        pred_dict = {dataset: 24 if dataset == 'ili' else 96 for dataset in datasets}
+        
+        self.meta_features = {dataset: np.load(f'{meta_feature_path}/meta_feature_{name_dict[dataset]}_train_{pred_dict[dataset]}.npz',
                                                allow_pickle=True)['meta_feature'] for dataset in datasets}
         
         # todo: 利用全部多元序列的统计量信息(而不是简单平均)
         # self.meta_features = {k:np.mean(v, axis=0).squeeze() for k,v in self.meta_features.items()}
         # self.meta_features = {k: v[0, :] for k,v in self.meta_features.items()} # mean
         self.meta_features = {k: v.flatten() for k,v in self.meta_features.items()}
-
-        # clip values
-        self.meta_features = {k: np.clip(v, -1e4, 1e4) for k, v in self.meta_features.items()}
         
         assert len(set([v.shape for v in self.meta_features.values()])) == 1
         self.meta_feature_dim = list(self.meta_features.values())[0].shape[0]
@@ -67,6 +73,8 @@ class Meta():
         mu = np.nanmean(np.stack(list(self.meta_features.values())), axis=0)
         std = np.nanstd(np.stack(list(self.meta_features.values())), axis=0)
         self.meta_features = {k: (v - mu) / (std + 1e-6) for k,v in self.meta_features.items()}
+        # clip values
+        self.meta_features = {k: np.clip(v, -1e4, 1e4) for k, v in self.meta_features.items()}
         assert (~np.isnan(np.stack(list(self.meta_features.values())))).all()
 
         datasets_train = [_ for _ in datasets if _ != test_dataset]
@@ -84,9 +92,17 @@ class Meta():
 
         # load result, metrics: mae, mse (√), rmse, mape, mspe
         metric_matrix_train, metric_matrix_test = {}, {}
-        metric_matrix_train = {_: np.load(f'{result_path}/{_}/metrics.npy')[1] for _ in file_list if dataset_test not in _}
-        # metric_matrix_train = {_: np.load(f'{result_path}/{_}/metrics.npy')[1] for _ in file_list if dataset_test in _}
-        metric_matrix_test = {_: np.load(f'{result_path}/{_}/metrics.npy')[1] for _ in file_list if dataset_test in _}
+        for _ in file_list:
+            if 'Transformer' in _:
+                if dataset_test not in _:
+                    metric_matrix_train[_] = np.load(f'{result_path_transformer}/{_}/metrics.npy')[1]
+                else:
+                    metric_matrix_test[_] = np.load(f'{result_path_transformer}/{_}/metrics.npy')[1]
+            else:
+                if dataset_test not in _:
+                    metric_matrix_train[_] = np.load(f'{result_path_non_transformer}/{_}/metrics.npy')[1]
+                else:
+                    metric_matrix_test[_] = np.load(f'{result_path_non_transformer}/{_}/metrics.npy')[1]
 
         # training set
         trainset_components, trainset_meta_features, trainset_targets = [], [], []
@@ -295,7 +311,7 @@ class Meta():
         return np.mean(pred_ranks_for_true_topk), np.mean(true_ranks_for_pred_topk), len(pred_ranks), top1_perf
 
 meta = Meta(); task_name = 'long_term_forecast'
-file_list = [_ for _ in os.listdir('./resultsGym') if task_name in _]
+file_list = [_ for _ in os.listdir('./resultsGym_non_transformer') if task_name in _]
 datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
 
 os.makedirs('meta/logfiles', exist_ok=True)
