@@ -5,7 +5,6 @@ import re
 import yaml
 import numpy as np
 import pandas as pd
-from itertools import chain
 from torch import nn
 from utils.myutils import Utils
 from sklearn import preprocessing
@@ -13,7 +12,6 @@ from torch.utils.data import Subset, DataLoader, TensorDataset, random_split, Co
 from meta.networks import meta_predictor
 from tqdm import tqdm
 import logging
-import random
 
 class Meta():
     def __init__(self,
@@ -36,20 +34,12 @@ class Meta():
         self.lr = lr
         self.epochs = epochs
 
-    def components_processing(self, task_name, datasets, test_dataset,
+    def components_processing(self, task_name, test_dataset,
                               components_path='./meta/components.yaml',
                               result_path_non_transformer='./resultsGym_non_transformer',
                               result_path_transformer='./resultsGym_transformer',
-                            #   result_path_non_transformer='/data/coding/chaochuan/TSGym_ty/resultsGym_non_transformer',
-                            #   result_path_transformer='/data/coding/chaochuan/TSGym_ty/resultsGym_transformer',
-                              meta_feature_path='./get_meta_feature/meta_features',
-                              arg_component_balance=False,
-                              arg_add_new_dataset=False,
-                              arg_add_transformer=False):
-        
-        self.arg_component_balance = arg_component_balance
-        self.arg_add_new_dataset = arg_add_new_dataset
-        self.arg_add_transformer = arg_add_transformer
+                              meta_feature_path='./get_meta_feature/meta_features'):
+
         self.test_dataset = test_dataset
         
         file_list_non_transformer = [_ for _ in os.listdir(result_path_non_transformer) if task_name in _]
@@ -57,32 +47,9 @@ class Meta():
         print(f'number of non-transformer results: {len(file_list_non_transformer)}')
         print(f'number of transformer results: {len(file_list_transformer)}')
 
-        file_list = file_list_non_transformer + file_list_transformer if arg_add_transformer else file_list_non_transformer
-        # datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
-
-        # todo: 理论上component balance不同数据集之间应该取交集, 现在实验结果还比较少, 以数量替代
-        # file_list_resample = {dataset: [_ for _ in file_list if dataset in _] for dataset in datasets}
-        # intersection = {}
-        # for k, v in file_list_resample.items():
-        #     v = ['-'.join(vv[re.search(re.escape('TSGym'), vv).end()+1: ].split('_')[:8] +\
-        #                     [re.search(r'_sl(\d+)_', vv).group(1),
-        #                      re.search(r'_dm(\d+)_', vv).group(1),
-        #                      re.search(r'_df(\d+)_', vv).group(1),
-        #                      re.search(r'_el(\d+)_', vv).group(1),
-        #                      re.search(r'_epochs(\d+)_', vv).group(1),
-        #                      re.search(r'_lr([\d.]+)_', vv).group(1),
-        #                      re.search(r'lrs([^_]+)', vv).group(1)]) for vv in v]
-        #     intersection[k] = v
-        # set.intersection(*map(set, list(file_list_resample.values())))
-
-        if arg_component_balance:
-            self.utils.set_seed(self.seed)
-            print(f'Before balance: {len(file_list)}')
-            file_list_resample = {dataset: [_ for _ in file_list if dataset in _] for dataset in datasets}
-            num_intersection = min([len(_) for _ in file_list_resample.values()])
-            file_list_resample = {k: random.sample(v, num_intersection) for k,v in file_list_resample.items()}
-            file_list = sorted(list(chain.from_iterable(list(file_list_resample.values()))))
-            print(f'After balance: {len(file_list)}')
+        # file_list = file_list_non_transformer + file_list_transformer
+        file_list = file_list_non_transformer
+        datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
 
         # load meta features
         name_dict = {dataset: dataset for dataset in datasets}
@@ -90,6 +57,7 @@ class Meta():
         name_dict['Exchange'] = 'exchange_rate'
         name_dict['ili'] = 'national_illness'
         pred_dict = {dataset: 24 if dataset == 'ili' else 96 for dataset in datasets}
+        
         self.meta_features = {dataset: np.load(f'{meta_feature_path}/meta_feature_{name_dict[dataset]}_train_{pred_dict[dataset]}.npz',
                                                allow_pickle=True)['meta_feature'] for dataset in datasets}
         
@@ -107,15 +75,15 @@ class Meta():
         self.meta_features = {k: (v - mu) / (std + 1e-6) for k,v in self.meta_features.items()}
         # clip values
         self.meta_features = {k: np.clip(v, -1e4, 1e4) for k, v in self.meta_features.items()}
-        # fillna (e.g., covid-19)
         self.meta_features = {k: np.where(np.isnan(v), 0, v) for k, v in self.meta_features.items()}
         assert (~np.isnan(np.stack(list(self.meta_features.values())))).all()
 
-        # training datasets and testing dataset
         datasets_train = [_ for _ in datasets if _ != test_dataset]
-        if not arg_add_new_dataset:
-            datasets_train = [_ for _ in datasets_train if _ not in ['covid-19', 'fred-md']]
         dataset_test = [_ for _ in datasets if _ == test_dataset][0]
+
+        # datasets_train = [test_dataset]
+        # dataset_test = test_dataset
+
         print(f'training dataset: {datasets_train}, testing dataset: {dataset_test}')
 
         # load components
@@ -126,16 +94,16 @@ class Meta():
         # load result, metrics: mae, mse (√), rmse, mape, mspe
         metric_matrix_train, metric_matrix_test = {}, {}
         for _ in file_list:
-            if any([d in _ for d in datasets_train]):
-                metric_matrix_train[_] = np.load(f'{result_path_transformer}/{_}/metrics.npy')[1] if 'Transformer' in _ else np.load(f'{result_path_non_transformer}/{_}/metrics.npy')[1]
-            elif dataset_test in _:
-                metric_matrix_test[_] = np.load(f'{result_path_transformer}/{_}/metrics.npy')[1]  if 'Transformer' in _ else np.load(f'{result_path_non_transformer}/{_}/metrics.npy')[1]
+            if 'Transformer' in _:
+                if dataset_test not in _:
+                    metric_matrix_train[_] = np.load(f'{result_path_transformer}/{_}/metrics.npy')[1]
+                else:
+                    metric_matrix_test[_] = np.load(f'{result_path_transformer}/{_}/metrics.npy')[1]
             else:
-                pass
-
-        assert len(set([_.split('_')[3] for _ in list(metric_matrix_test.keys())])) == 1
-        assert list(set([_.split('_')[3] for _ in list(metric_matrix_test.keys())]))[0] == dataset_test
-        assert dataset_test not in list(set([_.split('_')[3] for _ in list(metric_matrix_train.keys())]))
+                if dataset_test not in _:
+                    metric_matrix_train[_] = np.load(f'{result_path_non_transformer}/{_}/metrics.npy')[1]
+                else:
+                    metric_matrix_test[_] = np.load(f'{result_path_non_transformer}/{_}/metrics.npy')[1]
 
         # training set
         trainset_components, trainset_meta_features, trainset_targets = [], [], []
@@ -244,7 +212,7 @@ class Meta():
         # self.criterion = nn.MSELoss()
         self.criterion = self.loss_pearson
 
-    def meta_fit(self, best_metric=999, best_epoch=0, es_count=0, es_tol=5, es_stopped=False):
+    def meta_fit(self, best_metric=999, es_count=0, es_tol=5):
         pred_ranks_for_true_topk_epoch, true_ranks_for_pred_topk_epoch, top1_perf_epoch = [], [], []
         for epoch in tqdm(range(self.epochs)):
             loss_batch = []; self.model.train()
@@ -266,20 +234,18 @@ class Meta():
                 self.optimizer.step()
 
             print(f'Epoch {epoch} loss: {np.mean(loss_batch)}')
-            if self.valloader is not None and not es_stopped:
-                val_loss = self.meta_evaluate()
-                if val_loss < best_metric:
-                    print(f'best val metric: {best_metric}, current val metric: {val_loss}, continue training..')
-                    best_metric = val_loss
-                    es_count = 0
-                else:
-                    es_count += 1
+            # if self.valloader is not None:
+            #     val_loss = self.meta_evaluate()
+            #     if val_loss < best_metric:
+            #         print(f'best val metric: {best_metric}, current val metric: {val_loss}, continue training..')
+            #         best_metric = val_loss
+            #         es_count = 0
+            #     else:
+            #         es_count += 1
 
-                if es_count > es_tol:
-                    print(f'Early stopping at epoch: {epoch}')
-                    best_epoch = epoch
-                    es_stopped = True
-                    # break
+            #     if es_count > es_tol:
+            #         print(f'Early stopping at epoch: {epoch}')
+            #         break
 
             if self.testloader is not None:
                 pred_ranks_for_true_topk, true_ranks_for_pred_topk, total_num, top1_perf = self.meta_predict()
@@ -287,12 +253,11 @@ class Meta():
                 true_ranks_for_pred_topk_epoch.append(true_ranks_for_pred_topk)
                 top1_perf_epoch.append(top1_perf)
 
-        np.savez_compressed(f'./meta/results/{self.test_dataset}-component_balance_{self.arg_component_balance}-add_new_dataset_{self.arg_add_new_dataset}-add_transformer_{self.arg_add_transformer}.npz',
+        np.savez_compressed(f'./meta/results/perf_epoch_{self.test_dataset}.npz',
                             pred_ranks_for_true_topk_epoch=pred_ranks_for_true_topk_epoch,
                             true_ranks_for_pred_topk_epoch=true_ranks_for_pred_topk_epoch,
                             total_num=total_num,
-                            top1_perf_epoch=top1_perf_epoch,
-                            best_epoch=best_epoch)
+                            top1_perf_epoch=top1_perf_epoch)
 
     @torch.no_grad()
     def meta_evaluate(self):
@@ -346,14 +311,9 @@ class Meta():
 
         return np.mean(pred_ranks_for_true_topk), np.mean(true_ranks_for_pred_topk), len(pred_ranks), top1_perf
 
-
-
 meta = Meta(); task_name = 'long_term_forecast'
 file_list = [_ for _ in os.listdir('./resultsGym_non_transformer') if task_name in _]
-# file_list = [_ for _ in os.listdir('/data/coding/chaochuan/TSGym_ty/resultsGym_non_transformer') if task_name in _]
-datasets = sorted(list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list])))
-# datasets = [_ for _ in datasets if _ not in ['ECL', 'traffic', 'covid-19', 'fred-md']]
-datasets = [_ for _ in datasets if _ not in ['covid-19', 'fred-md']]
+datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
 
 os.makedirs('meta/logfiles', exist_ok=True)
 os.makedirs('meta/results', exist_ok=True)
@@ -363,7 +323,6 @@ logger = logging.getLogger()
 for test_dataset in datasets:
     # processing data for meta learning
     meta.components_processing(task_name=task_name,
-                               datasets=datasets,
                                test_dataset=test_dataset)
     # init model
     meta.meta_init()
