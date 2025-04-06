@@ -19,7 +19,7 @@ class Meta():
     def __init__(self,
                  seed: int=42,
                  task_name: str='long_term_forecast',
-                 early_stopping=False,
+                 early_stopping=True,
                  batch_size=128,
                  d_model=64,
                  weight_decay=0.01,
@@ -37,14 +37,13 @@ class Meta():
         self.epochs = epochs
 
     def components_processing(self, task_name, datasets, test_dataset,
+                              components_non_Transformer_path='./meta/components_non_Transformer.yaml',
                               components_path='./meta/components.yaml',
                               result_path_non_transformer='./resultsGym_non_transformer',
                               result_path_transformer='./resultsGym_transformer',
-                            #   result_path_non_transformer='/data/coding/chaochuan/TSGym_ty/resultsGym_non_transformer',
-                            #   result_path_transformer='/data/coding/chaochuan/TSGym_ty/resultsGym_transformer',
                               meta_feature_path='./get_meta_feature/meta_features',
                               arg_component_balance=False,
-                              arg_add_new_dataset=False,
+                              arg_add_new_dataset=True,
                               arg_add_transformer=False):
         
         self.arg_component_balance = arg_component_balance
@@ -119,8 +118,12 @@ class Meta():
         print(f'training dataset: {datasets_train}, testing dataset: {dataset_test}')
 
         # load components
-        with open(components_path, 'r') as f:
-            self.components = yaml.safe_load(f)
+        if arg_add_transformer:
+            with open(components_path, 'r') as f:
+                self.components = yaml.safe_load(f)
+        else:
+            with open(components_non_Transformer_path, 'r') as f:
+                self.components = yaml.safe_load(f)
         self.components = {k: {kk:vv for kk, vv in zip(v, preprocessing.LabelEncoder().fit_transform(v))} for k,v in self.components.items()}
 
         # load result, metrics: mae, mse (√), rmse, mape, mspe
@@ -208,7 +211,7 @@ class Meta():
         testset_components, testset_meta_features, testset_targets = testset_components.to(self.device), testset_meta_features.to(self.device), testset_targets.to(self.device)
 
         if self.early_stopping:
-            # splitting training and validation set
+            # splitting training and validation set (70% vs 30%)
             train_size = int(0.7 * trainset_components.shape[0])
             val_size = trainset_components.shape[0] - train_size
             self.utils.set_seed(self.seed)
@@ -350,10 +353,7 @@ class Meta():
 
 meta = Meta(); task_name = 'long_term_forecast'
 file_list = [_ for _ in os.listdir('./resultsGym_non_transformer') if task_name in _]
-# file_list = [_ for _ in os.listdir('/data/coding/chaochuan/TSGym_ty/resultsGym_non_transformer') if task_name in _]
 datasets = sorted(list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list])))
-# datasets = [_ for _ in datasets if _ not in ['ECL', 'traffic', 'covid-19', 'fred-md']]
-datasets = [_ for _ in datasets if _ not in ['covid-19', 'fred-md']]
 
 os.makedirs('meta/logfiles', exist_ok=True)
 os.makedirs('meta/results', exist_ok=True)
