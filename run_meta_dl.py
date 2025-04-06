@@ -42,9 +42,9 @@ class Meta():
                               result_path_non_transformer='./resultsGym_non_transformer',
                               result_path_transformer='./resultsGym_transformer',
                               meta_feature_path='./get_meta_feature/meta_features',
-                              arg_component_balance=False,
+                              arg_component_balance=True,
                               arg_add_new_dataset=True,
-                              arg_add_transformer=False):
+                              arg_add_transformer=True):
         
         self.arg_component_balance = arg_component_balance
         self.arg_add_new_dataset = arg_add_new_dataset
