@@ -9,6 +9,7 @@ from layers.StandardNorm import Normalize, DishTS
 from layers.SeriesDecom import series_decomp, series_decomp_multi, DFT_series_decomp
 import numpy as np
 from copy import deepcopy
+from transformers.models.gpt2.modeling_gpt2 import GPT2Model
 
 class FlattenHead(nn.Module):
     def __init__(self, n_vars, nf, target_window, head_dropout=0):
@@ -88,6 +89,46 @@ class Projector(nn.Module):
         y = self.backbone(x)  # B x O
 
         return y
+
+class LLM(nn.Module):
+    def __init__(self, configs, gpt_layers=6):
+        super().__init__()
+        self.encoder = GPT2Model.from_pretrained('./models/llm/gpt2', output_attentions=False, output_hidden_states=True)
+        self.encoder.h = self.encoder.h[:gpt_layers]
+        self.proj = nn.Linear(768, configs.d_model) # todo: 截断还是linear projection?
+    
+    def forward(self, x, attn_mask=None, tau=None, delta=None): # input shape: [BxSxD]
+        # padding zero on the last dimension, BxTx768
+        x = torch.nn.functional.pad(x, (0, 768 - x.shape[-1]))
+        x = self.encoder(inputs_embeds=x).last_hidden_state
+        x = self.proj(x)
+        return x, None
+    
+class TSFM(nn.Module):
+    def __init__(self, configs):
+        super().__init__()
+        # Timer里面的decoder实际上是encoder
+        self.decoder = Encoder(attn_layers=[EncoderLayer(AttentionLayer(FullAttention(configs=configs,
+                                                                                      mask_flag=False,
+                                                                                      factor=configs.factor,
+                                                                                      attention_dropout=configs.dropout, 
+                                                                                      output_attention=False),
+                                                                        configs.d_model, configs.n_heads),
+                                                        configs.d_model,
+                                                        configs.d_ff,
+                                                        dropout=configs.dropout,
+                                                        activation=configs.activation) for _ in range(configs.e_layers)],
+                               norm_layer=torch.nn.LayerNorm(configs.d_model))
+        sd = torch.load('./models/llm/timer/Timer_forecast_1.0.ckpt', map_location="cpu", weights_only=False)["state_dict"]
+        for k in sd.keys():
+            print(k)
+        sd = {k[6:]: v for k, v in sd.items() if 'decoder' in k}
+        self.decoder.load_state_dict(sd, strict=False)
+
+    def forward(self, x, attn_mask=None, tau=None, delta=None): # input shape: [BxSxD]
+        x, _ = self.decoder(x)
+        return x, None
+
 
 class Model(nn.Module):
     def __init__(self, configs,
@@ -404,6 +445,13 @@ class Model(nn.Module):
                     raise NotImplementedError
             else:
                 self.decoder = None
+        elif self.gym_network_architecture == 'LLM':
+            # loads a pretrained GPT-2 base model
+            self.encoder = LLM(configs)
+            self.decoder = None
+        elif self.gym_network_architecture == 'TSFM':
+            self.encoder = TSFM(configs)
+            self.decoder = None
         else:
             if not self.gym_encoder_only:
                 raise NotImplementedError
