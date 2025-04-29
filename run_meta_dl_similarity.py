@@ -11,6 +11,7 @@ from sklearn import preprocessing
 from torch.utils.data import Subset, DataLoader, TensorDataset, random_split, ConcatDataset
 from meta.networks import meta_predictor
 from tqdm import tqdm
+from sklearn.metrics.pairwise import cosine_similarity
 import logging
 
 class Meta():
@@ -22,7 +23,7 @@ class Meta():
                  d_model=64,
                  weight_decay=0.01,
                  lr=0.001,
-                 epochs=100):
+                 epochs=500):
         self.seed = seed
         self.task_name = task_name
         self.utils = Utils()
@@ -33,7 +34,68 @@ class Meta():
         self.weight_decay = weight_decay
         self.lr = lr
         self.epochs = epochs
+        
+    def find_similar_datasets(self,data_dict, k=5):
+        # 将字典中的特征向量转换为矩阵
+        dataset_names = list(data_dict.keys())
+        features = np.array(list(data_dict.values()))
+        # 计算余弦相似度
+        similarity_matrix = cosine_similarity(features)
+        # 创建一个字典来存储结果
+        similar_datasets = {}
+        # 对每个数据集，找出最相似的k个数据集
+        for i, name in enumerate(dataset_names):
+            # 获取当前数据集的相似度
+            similarities = similarity_matrix[i]
+            # 排序相似度并获取索引
+            sorted_indices = np.argsort(similarities)[::-1]
+            # 排除自己，选择前k个相似的数据集
+            top_k_indices = sorted_indices[1:k+1]
+            # 获取对应的名称
+            top_k_names = [dataset_names[j] for j in top_k_indices]
+            # 存储结果
+            similar_datasets[name] = top_k_names
+        
+        return similar_datasets
+    
+    def meta_feature_processing(self, task_name, 
+                                meta_feature_path='./get_meta_feature/meta_features',
+                                result_path_non_transformer='./resultsGym_non_transformer', 
+                                result_path_transformer='./resultsGym_transformer'):
+        
+        file_list_non_transformer = [_ for _ in os.listdir(result_path_non_transformer) if task_name in _]
+        file_list_transformer = [_ for _ in os.listdir(result_path_transformer) if task_name in _]
+        print(f'number of non-transformer results: {len(file_list_non_transformer)}')
+        print(f'number of transformer results: {len(file_list_transformer)}')
 
+        # file_list = file_list_non_transformer + file_list_transformer
+        file_list = file_list_non_transformer
+        datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
+        # load meta features
+        name_dict = {dataset: dataset for dataset in datasets}
+        name_dict['ECL'] = 'electricity'
+        name_dict['Exchange'] = 'exchange_rate'
+        name_dict['ili'] = 'national_illness'
+        pred_dict = {dataset: 24 if dataset == 'ili' else 96 for dataset in datasets}
+        
+        self.meta_features = {dataset: np.load(f'{meta_feature_path}/meta_feature_{name_dict[dataset]}_train_{pred_dict[dataset]}.npz',
+                                               allow_pickle=True)['meta_feature'] for dataset in datasets}
+        self.meta_features = {k: v.flatten() for k,v in self.meta_features.items()}
+        
+        assert len(set([v.shape for v in self.meta_features.values()])) == 1
+        self.meta_feature_dim = list(self.meta_features.values())[0].shape[0]
+        
+        # z-score on different datasets
+        mu = np.nanmean(np.stack(list(self.meta_features.values())), axis=0)
+        std = np.nanstd(np.stack(list(self.meta_features.values())), axis=0)
+        self.meta_features = {k: (v - mu) / (std + 1e-6) for k,v in self.meta_features.items()}
+        # clip values
+        self.meta_features = {k: np.clip(v, -1e4, 1e4) for k, v in self.meta_features.items()}
+        assert (~np.isnan(np.stack(list(self.meta_features.values())))).all()
+        
+        self.similar_datasets_dict = self.find_similar_datasets(self.meta_features)
+        
+        
     def components_processing(self, task_name, test_dataset,
                               components_path='./meta/components.yaml',
                               result_path_non_transformer='./resultsGym_non_transformer',
@@ -51,36 +113,8 @@ class Meta():
         file_list = file_list_non_transformer
         datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
 
-        # load meta features
-        name_dict = {dataset: dataset for dataset in datasets}
-        name_dict['ECL'] = 'electricity'
-        name_dict['Exchange'] = 'exchange_rate'
-        name_dict['ili'] = 'national_illness'
-        pred_dict = {dataset: 24 if dataset == 'ili' else 96 for dataset in datasets}
-        
-        self.meta_features = {dataset: np.load(f'{meta_feature_path}/meta_feature_{name_dict[dataset]}_train_{pred_dict[dataset]}.npz',
-                                               allow_pickle=True)['meta_feature'] for dataset in datasets}
-        
-        # todo: 利用全部多元序列的统计量信息(而不是简单平均)
-        # self.meta_features = {k:np.mean(v, axis=0).squeeze() for k,v in self.meta_features.items()}
-        # self.meta_features = {k: v[0, :] for k,v in self.meta_features.items()} # mean
-        self.meta_features = {k: v.flatten() for k,v in self.meta_features.items()}
-        
-        assert len(set([v.shape for v in self.meta_features.values()])) == 1
-        self.meta_feature_dim = list(self.meta_features.values())[0].shape[0]
-
-        # z-score on different datasets
-        mu = np.nanmean(np.stack(list(self.meta_features.values())), axis=0)
-        std = np.nanstd(np.stack(list(self.meta_features.values())), axis=0)
-        self.meta_features = {k: (v - mu) / (std + 1e-6) for k,v in self.meta_features.items()}
-        # clip values
-        self.meta_features = {k: np.clip(v, -1e4, 1e4) for k, v in self.meta_features.items()}
-        self.meta_features = {k: np.where(np.isnan(v), 0, v) for k, v in self.meta_features.items()}
-        assert (~np.isnan(np.stack(list(self.meta_features.values())))).all()
-
-        datasets_train = [_ for _ in datasets if _ != test_dataset]
-        dataset_test = [_ for _ in datasets if _ == test_dataset][0]
-
+        datasets_train = self.similar_datasets_dict[self.test_dataset]
+        dataset_test = self.test_dataset
         # datasets_train = [test_dataset]
         # dataset_test = test_dataset
 
@@ -253,11 +287,11 @@ class Meta():
                 true_ranks_for_pred_topk_epoch.append(true_ranks_for_pred_topk)
                 top1_perf_epoch.append(top1_perf)
 
-        np.savez_compressed(f'./meta/results/perf_epoch_{self.test_dataset}.npz',
-                            pred_ranks_for_true_topk_epoch=pred_ranks_for_true_topk_epoch,
-                            true_ranks_for_pred_topk_epoch=true_ranks_for_pred_topk_epoch,
-                            total_num=total_num,
-                            top1_perf_epoch=top1_perf_epoch)
+        # np.savez_compressed(f'./meta/results/perf_epoch_{self.test_dataset}.npz',
+        #                     pred_ranks_for_true_topk_epoch=pred_ranks_for_true_topk_epoch,
+        #                     true_ranks_for_pred_topk_epoch=true_ranks_for_pred_topk_epoch,
+        #                     total_num=total_num,
+        #                     top1_perf_epoch=top1_perf_epoch)
 
     @torch.no_grad()
     def meta_evaluate(self):
@@ -312,21 +346,25 @@ class Meta():
         return np.mean(pred_ranks_for_true_topk), np.mean(true_ranks_for_pred_topk), len(pred_ranks), top1_perf
 
 meta = Meta(); task_name = 'long_term_forecast'
-file_list = [_ for _ in os.listdir('./resultsGym_non_transformer') if task_name in _]
-datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
+meta.meta_feature_processing(task_name)
 
-os.makedirs('meta/logfiles', exist_ok=True)
-os.makedirs('meta/results', exist_ok=True)
-logging.basicConfig(filename=f'meta/logfiles/meta.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger()
+# file_list = [_ for _ in os.listdir('./resultsGym_non_transformer') if task_name in _]
+# datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
 
-for test_dataset in datasets:
-    # processing data for meta learning
-    meta.components_processing(task_name=task_name,
-                               test_dataset=test_dataset)
-    # init model
-    meta.meta_init()
-    # fitting meta-learner
-    meta.meta_fit()
-    # predicting
-    meta.meta_predict()
+# os.makedirs('meta/logfiles', exist_ok=True)
+# os.makedirs('meta/results', exist_ok=True)
+# logging.basicConfig(filename=f'meta/logfiles/meta.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+# logger = logging.getLogger()
+
+
+
+# for test_dataset in datasets:
+#     # processing data for meta learning
+#     meta.components_processing(task_name=task_name,
+#                                test_dataset=test_dataset)
+#     # init model
+#     meta.meta_init()
+#     # fitting meta-learner
+#     meta.meta_fit()
+#     # predicting
+#     meta.meta_predict()

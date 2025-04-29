@@ -10,6 +10,8 @@ from layers.SeriesDecom import series_decomp, series_decomp_multi, DFT_series_de
 import numpy as np
 from copy import deepcopy
 from transformers.models.gpt2.modeling_gpt2 import GPT2Model
+from models import TimeLLM, Moment
+
 
 class FlattenHead(nn.Module):
     def __init__(self, n_vars, nf, target_window, head_dropout=0):
@@ -90,43 +92,95 @@ class Projector(nn.Module):
 
         return y
 
+# GPT4TS, TimeLLM
 class LLM(nn.Module):
-    def __init__(self, configs, gpt_layers=6):
+    def __init__(self, configs,
+                 network_architecture,
+                 patch_embedding,
+                 frozen=True, gpt_layers=6):
         super().__init__()
-        self.encoder = GPT2Model.from_pretrained('./models/llm/gpt2', output_attentions=False, output_hidden_states=True)
-        self.encoder.h = self.encoder.h[:gpt_layers]
-        self.proj = nn.Linear(768, configs.d_model) # todo: 截断还是linear projection?
+        self.network_architecture = network_architecture
+
+        if network_architecture == 'LLM-GPT4TS':
+            self.encoder = GPT2Model.from_pretrained('./models/llm/gpt2', output_attentions=False, output_hidden_states=True)
+            self.encoder.h = self.encoder.h[:gpt_layers]
+            if frozen:
+                for i, (name, param) in enumerate(self.encoder.named_parameters()):
+                    if 'ln' in name or 'wpe' in name: # or 'mlp' in name:
+                        param.requires_grad = True
+                    elif 'mlp' in name and configs.mlp == 1:
+                        param.requires_grad = True
+                    else:
+                        param.requires_grad = False
+            else:
+                pass
+            self.proj = nn.Linear(768, configs.d_model) # todo: 截断还是linear projection?
+        elif network_architecture == 'LLM-TimeLLM':
+            self.encoder = TimeLLM.Model(configs, patch_embedding=patch_embedding)
+        else:
+            raise NotImplementedError
     
     def forward(self, x, attn_mask=None, tau=None, delta=None): # input shape: [BxSxD]
-        # padding zero on the last dimension, BxTx768
-        x = torch.nn.functional.pad(x, (0, 768 - x.shape[-1]))
-        x = self.encoder(inputs_embeds=x).last_hidden_state
-        x = self.proj(x)
+        if self.network_architecture == 'LLM-GPT4TS':
+            # padding zero on the last dimension, BxTx768
+            x = torch.nn.functional.pad(x, (0, 768 - x.shape[-1]))
+            x = self.encoder(inputs_embeds=x).last_hidden_state
+            x = self.proj(x)
+        elif self.network_architecture == 'LLM-TimeLLM':
+            x = self.encoder(x)
+        else:
+            raise NotImplementedError
         return x, None
-    
+
+# Timer, Moment
 class TSFM(nn.Module):
-    def __init__(self, configs):
+    def __init__(self, configs,
+                 network_architecture,
+                 frozen=True):
         super().__init__()
-        # Timer里面的decoder实际上是encoder
-        self.decoder = Encoder(attn_layers=[EncoderLayer(AttentionLayer(FullAttention(configs=configs,
-                                                                                      mask_flag=False,
-                                                                                      factor=configs.factor,
-                                                                                      attention_dropout=configs.dropout, 
-                                                                                      output_attention=False),
-                                                                        configs.d_model, configs.n_heads),
-                                                        configs.d_model,
-                                                        configs.d_ff,
-                                                        dropout=configs.dropout,
-                                                        activation=configs.activation) for _ in range(configs.e_layers)],
-                               norm_layer=torch.nn.LayerNorm(configs.d_model))
-        sd = torch.load('./models/llm/timer/Timer_forecast_1.0.ckpt', map_location="cpu", weights_only=False)["state_dict"]
-        for k in sd.keys():
-            print(k)
-        sd = {k[6:]: v for k, v in sd.items() if 'decoder' in k}
-        self.decoder.load_state_dict(sd, strict=False)
+        self.network_architecture = network_architecture
+
+        if network_architecture == 'TSFM-Timer':
+            # Timer里面的decoder实际上是encoder
+            self.encoder = Encoder(attn_layers=[EncoderLayer(AttentionLayer(FullAttention(configs=configs,
+                                                                                        mask_flag=False,
+                                                                                        factor=configs.factor,
+                                                                                        attention_dropout=configs.dropout, 
+                                                                                        output_attention=False),
+                                                                            configs.d_model, configs.n_heads),
+                                                            configs.d_model,
+                                                            configs.d_ff,
+                                                            dropout=configs.dropout,
+                                                            activation=configs.activation) for _ in range(configs.e_layers)],
+                                norm_layer=torch.nn.LayerNorm(configs.d_model))
+            sd = torch.load('./models/llm/timer/Timer_forecast_1.0.ckpt', map_location="cpu", weights_only=False)["state_dict"]
+            for k in sd.keys():
+                print(k)
+            sd = {k[6:]: v for k, v in sd.items() if 'decoder' in k}
+            self.encoder.load_state_dict(sd, strict=False)
+            if frozen:
+                # frozen attention weights
+                for name, param in self.encoder.named_parameters():
+                    # 只finetune attention layer中的layer norm仿射变换的参数
+                    if 'attn_layers' in name and 'norm' not in name:
+                        param.requires_grad = False
+            else:
+                pass
+        elif network_architecture == 'TSFM-Moment':
+            self.encoder = Moment.Model(frozen=frozen)
+            self.proj = nn.Linear(768, configs.d_model)
+        else:
+            raise NotImplementedError
 
     def forward(self, x, attn_mask=None, tau=None, delta=None): # input shape: [BxSxD]
-        x, _ = self.decoder(x)
+        if self.network_architecture == 'TSFM-Moment':
+            x = torch.nn.functional.pad(x, (0, 768 - x.shape[-1])) # padding to 768
+            x, _ = self.encoder(x)
+            x = self.proj(x) # 768 -> d_model
+        elif self.network_architecture == 'TSFM-Timer':
+            x, _ = self.encoder(x)
+        else:
+            raise NotImplementedError
         return x, None
 
 
@@ -140,6 +194,7 @@ class Model(nn.Module):
                   gym_network_architecture='Transformer',
                   gym_attn='self-attention',
                   gym_encoder_only=True,
+                  gym_finetune=True,
                   ):
         super(Model, self).__init__()
         self.task_name = configs.task_name
@@ -154,7 +209,7 @@ class Model(nn.Module):
         self.gym_network_architecture = gym_network_architecture
         self.gym_attn = gym_attn
         self.gym_encoder_only = eval(gym_encoder_only) if isinstance(gym_encoder_only, str) else gym_encoder_only
-
+        self.gym_finetune = eval(gym_finetune) if isinstance(gym_finetune, str) else gym_finetune
         # pipeline
         # ↓ series sampling
         # ↓ series normalization
@@ -229,12 +284,12 @@ class Model(nn.Module):
         # https://github.com/thuml/Time-Series-Library/blob/main/models/TimeMixer.py
         if self.gym_channel_independent: # channel-independent
             if self.gym_input_embed == 'series-encoding':
-                if self.gym_network_architecture == 'Transformer':
-                    self.enc_embedding = DataEmbedding(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
-                    self.dec_embedding = DataEmbedding(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
-                else:
+                if self.gym_network_architecture in ['MLP', 'GRU']:
                     self.enc_embedding = DataEmbedding_wo_pos(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
                     self.dec_embedding = DataEmbedding_wo_pos(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                else:
+                    self.enc_embedding = DataEmbedding(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                    self.dec_embedding = DataEmbedding(1, configs.d_model, configs.embed, configs.freq, configs.dropout)
 
                 if self.series_sampling:
                     self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
@@ -253,26 +308,20 @@ class Model(nn.Module):
                     self.decoder_projection = nn.Linear(configs.d_model, 1, bias=True)
                     self.head = nn.Linear(configs.seq_len, configs.pred_len)
             elif self.gym_input_embed == 'series-patching':
-                # patch_len = 3 if configs.seq_len % 3 == 0 else 4
-                # stride = patch_len
-                # padding = 0
-
-                # patch_len = 16
-                # stride = padding = 8
-
                 stride, padding, patch_num, patch_len = calculate_patch_num(configs.seq_len)
-                if self.gym_network_architecture == 'Transformer':
-                    # from PatchTST
-                    self.enc_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
-                                                        padding=padding, dropout=configs.dropout)
-                    # todo: PatchTST is encoder-only
-                    self.dec_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
-                                                        padding=padding, dropout=configs.dropout)
-                else:
+
+                if self.gym_network_architecture in ['MLP', 'GRU']:
                     self.enc_embedding = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
                                                                padding=padding, dropout=configs.dropout)
                     self.dec_embedding = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
                                                                padding=padding, dropout=configs.dropout)
+                else:
+                    # from PatchTST (todo: PatchTST is encoder-only)
+                    self.enc_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                        padding=padding, dropout=configs.dropout)
+                    self.dec_embedding = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                        padding=padding, dropout=configs.dropout)
+                    
                 # self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 2)
                 self.head = FlattenHead(configs.enc_in, configs.d_model * patch_num, configs.pred_len, head_dropout=configs.dropout)
 
@@ -281,18 +330,17 @@ class Model(nn.Module):
                     for i in range(configs.down_sampling_layers + 1):
                         seq_len_ = configs.seq_len // (configs.down_sampling_window ** i)
                         stride, padding, patch_num, patch_len = calculate_patch_num(seq_len_)
-                        if self.gym_network_architecture == 'Transformer':
-                            # from PatchTST
-                            enc_embedding_ = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
-                                                            padding=padding, dropout=configs.dropout)
-                            # todo: PatchTST is encoder-only
-                            dec_embedding_ = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
-                                                            padding=padding, dropout=configs.dropout)
-                        else:
+                        if self.gym_network_architecture in ['MLP', 'GRU']:
                             enc_embedding_ = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
                                                                    padding=padding, dropout=configs.dropout)
                             dec_embedding_ = PatchEmbedding_wo_pos(d_model=configs.d_model, patch_len=patch_len, stride=stride,
                                                                    padding=padding, dropout=configs.dropout)
+                        else:
+                            enc_embedding_ = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                            padding=padding, dropout=configs.dropout)
+                            dec_embedding_ = PatchEmbedding(d_model=configs.d_model, patch_len=patch_len, stride=stride,
+                                                            padding=padding, dropout=configs.dropout)
+                            
                         self.enc_embedding.append(enc_embedding_)
                         self.dec_embedding.append(dec_embedding_)
                         self.head.append(FlattenHead(configs.enc_in, configs.d_model * patch_num, configs.pred_len, head_dropout=configs.dropout))
@@ -311,13 +359,13 @@ class Model(nn.Module):
                 self.decoder_projection = None
                 self.head = nn.Linear(configs.d_model, configs.pred_len, bias=True)
             elif self.gym_input_embed == 'series-encoding':
-                if self.gym_network_architecture == 'Transformer':
-                    self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
-                    self.dec_embedding = DataEmbedding(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
-                else: # MLP, RNN
+                if self.gym_network_architecture in ['MLP', 'GRU']:
                     self.enc_embedding = DataEmbedding_wo_pos(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
                     self.dec_embedding = DataEmbedding_wo_pos(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
-
+                else:
+                    self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                    self.dec_embedding = DataEmbedding(configs.dec_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                    
                 # decoder projection
                 self.decoder_projection = nn.Linear(configs.d_model, configs.c_out, bias=True)
                 # predicting head
@@ -445,12 +493,12 @@ class Model(nn.Module):
                     raise NotImplementedError
             else:
                 self.decoder = None
-        elif self.gym_network_architecture == 'LLM':
+        elif 'LLM' in self.gym_network_architecture:
             # loads a pretrained GPT-2 base model
-            self.encoder = LLM(configs)
+            self.encoder = LLM(configs, network_architecture=self.gym_network_architecture, patch_embedding=self.enc_embedding)
             self.decoder = None
-        elif self.gym_network_architecture == 'TSFM':
-            self.encoder = TSFM(configs)
+        elif 'TSFM' in self.gym_network_architecture:
+            self.encoder = TSFM(configs, network_architecture=self.gym_network_architecture)
             self.decoder = None
         else:
             if not self.gym_encoder_only:

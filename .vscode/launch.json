@@ -1,53 +1,53 @@
-{
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-    
-        {
-            "name": "Python Debugger: Current File",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            // "args": ["--task_name", "long_term_forecast",
-            //          "--is_training", "1",
-            //          "--root_path", "./dataset/metr-la/",
-            //          "--data_path", "metr-la.csv",
-            //          "--model_id", "metr-la_96_96",
-            //          "--model", "DLinear",
-            //          "--data", "custom",
-            //          "--features", "M",
-            //          "--seq_len", "96",
-            //          "--label_len", "48",
-            //          "--pred_len", "96",
-            //          "--e_layers", "2",
-            //          "--d_layers", "1",
-            //          "--factor", "3",
-            //          "--enc_in", "./dataset/metr-la/",
-            //          "--dec_in", "1",
-            //          "--c_out", "./dataset/metr-la/",
-            //          "--des", "./dataset/metr-la/",
-            //          "--itr", "1"
-            //         ],
-            "python": "/data/coding/chaochuan/miniconda3/bin/python" // 修改为你的虚拟环境路径
-        }
-    ]
-}
-
 // {
-// 	"version": "0.2.0",
-// 	"configurations": [
+//     // Use IntelliSense to learn about possible attributes.
+//     // Hover to view descriptions of existing attributes.
+//     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+//     "version": "0.2.0",
+//     "configurations": [
+    
+//         {
+//             "name": "Python Debugger: Current File",
+//             "type": "debugpy",
+//             "request": "launch",
+//             "program": "${file}",
+//             "console": "integratedTerminal",
+//             // "args": ["--task_name", "long_term_forecast",
+//             //          "--is_training", "1",
+//             //          "--root_path", "./dataset/metr-la/",
+//             //          "--data_path", "metr-la.csv",
+//             //          "--model_id", "metr-la_96_96",
+//             //          "--model", "DLinear",
+//             //          "--data", "custom",
+//             //          "--features", "M",
+//             //          "--seq_len", "96",
+//             //          "--label_len", "48",
+//             //          "--pred_len", "96",
+//             //          "--e_layers", "2",
+//             //          "--d_layers", "1",
+//             //          "--factor", "3",
+//             //          "--enc_in", "./dataset/metr-la/",
+//             //          "--dec_in", "1",
+//             //          "--c_out", "./dataset/metr-la/",
+//             //          "--des", "./dataset/metr-la/",
+//             //          "--itr", "1"
+//             //         ],
+//             "python": "/data/nishome/user1/miniconda3/envs/mqenv/bin/python" // 修改为你的虚拟环境路径
+//         }
+//     ]
+// }
 
-// 		{
-// 			"name": "Python: Attach",
-// 			"type": "debugpy",
-// 			"request": "attach",
-// 			"connect": {
-// 				"host": "localhost",
-// 				"port": 8888
-// 			}
-// 		}
-// 	]
-// } 
+{
+	"version": "0.2.0",
+	"configurations": [
+
+		{
+			"name": "Python: Attach",
+			"type": "debugpy",
+			"request": "attach",
+			"connect": {
+				"host": "localhost",
+				"port": 8888
+			}
+		}
+	]
+} 
