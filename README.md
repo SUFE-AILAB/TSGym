@@ -67,3 +67,4 @@ ps: w.r.t. LLM and TSFM, series-patching is the default option.
 - data augmentation
 - bug: seq_len=192和series-patching
 - 有些module无法组合: 例如inverted-encoding + series-patching
+- x_mark的有效性

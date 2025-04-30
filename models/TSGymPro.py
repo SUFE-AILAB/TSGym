@@ -413,6 +413,7 @@ class Model(nn.Module):
         if self.gym_feature_attn == 'null':
             self.feature_encoder = None
         else:
+            if self.gym_channel_independent or self.gym_input_embed == 'inverted-encoding': raise NotImplementedError
             if self.gym_feature_attn == 'self-attention':
                 FeatureAttention = FullAttention
             elif self.gym_feature_attn == 'sparse-attention':
