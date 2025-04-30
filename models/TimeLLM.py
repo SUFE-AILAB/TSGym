@@ -79,7 +79,7 @@ class PatchEmbedding(nn.Module):
         return self.dropout(x), n_vars
 
 class Model(nn.Module):
-    def __init__(self, configs, patch_embedding, using_prompt=False, frozen=True,
+    def __init__(self, configs, using_prompt=False, frozen=True,
                  llm_model='GPT2', llm_layers=6, prompt_domain=0, llm_dim=768):
         super(Model, self).__init__()
         self.task_name = configs.task_name
@@ -89,8 +89,6 @@ class Model(nn.Module):
         self.top_k = 5
         self.using_prompt = using_prompt
         self.d_llm = llm_dim
-
-        self.patch_embedding = patch_embedding
 
         configs.llm_model = llm_model
         configs.llm_layers = llm_layers

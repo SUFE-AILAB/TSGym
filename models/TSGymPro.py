@@ -96,7 +96,6 @@ class Projector(nn.Module):
 class LLM(nn.Module):
     def __init__(self, configs,
                  network_architecture,
-                 patch_embedding,
                  frozen=True, gpt_layers=6):
         super().__init__()
         self.network_architecture = network_architecture
@@ -116,7 +115,7 @@ class LLM(nn.Module):
                 pass
             self.proj = nn.Linear(768, configs.d_model) # todo: 截断还是linear projection?
         elif network_architecture == 'LLM-TimeLLM':
-            self.encoder = TimeLLM.Model(configs, patch_embedding=patch_embedding)
+            self.encoder = TimeLLM.Model(configs, frozen=frozen)
         else:
             raise NotImplementedError
     
@@ -194,7 +193,7 @@ class Model(nn.Module):
                   gym_network_architecture='Transformer',
                   gym_attn='self-attention',
                   gym_encoder_only=True,
-                  gym_finetune=True,
+                  gym_frozen=True,
                   ):
         super(Model, self).__init__()
         self.task_name = configs.task_name
@@ -209,7 +208,7 @@ class Model(nn.Module):
         self.gym_network_architecture = gym_network_architecture
         self.gym_attn = gym_attn
         self.gym_encoder_only = eval(gym_encoder_only) if isinstance(gym_encoder_only, str) else gym_encoder_only
-        self.gym_finetune = eval(gym_finetune) if isinstance(gym_finetune, str) else gym_finetune
+        self.gym_frozen = eval(gym_frozen) if isinstance(gym_frozen, str) else gym_frozen
         # pipeline
         # ↓ series sampling
         # ↓ series normalization
@@ -495,10 +494,10 @@ class Model(nn.Module):
                 self.decoder = None
         elif 'LLM' in self.gym_network_architecture:
             # loads a pretrained GPT-2 base model
-            self.encoder = LLM(configs, network_architecture=self.gym_network_architecture, patch_embedding=self.enc_embedding)
+            self.encoder = LLM(configs, network_architecture=self.gym_network_architecture, frozen=self.gym_frozen)
             self.decoder = None
         elif 'TSFM' in self.gym_network_architecture:
-            self.encoder = TSFM(configs, network_architecture=self.gym_network_architecture)
+            self.encoder = TSFM(configs, network_architecture=self.gym_network_architecture, frozen=self.gym_frozen)
             self.decoder = None
         else:
             if not self.gym_encoder_only:
