@@ -26,7 +26,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             self.save_suffix = ''
         else:
             model_name, gym_series_sampling, gym_series_norm, gym_series_decomp, gym_channel_independent, \
-                        gym_input_embed, gym_network_architecture, gym_attn, gym_encoder_only, gym_frozen = self.args.model.split('_')
+                        gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, gym_encoder_only, gym_frozen = self.args.model.split('_')
             model = self.model_dict[model_name].Model(self.args,
                                                       gym_series_sampling=gym_series_sampling,
                                                       gym_series_norm=gym_series_norm,
@@ -35,6 +35,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                                                       gym_input_embed=gym_input_embed,
                                                       gym_network_architecture=gym_network_architecture,
                                                       gym_attn=gym_attn,
+                                                      gym_feature_attn=gym_feature_attn,
                                                       gym_encoder_only=gym_encoder_only,
                                                       gym_frozen=gym_frozen).float()
             self.save_suffix = 'Gym'

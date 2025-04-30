@@ -192,6 +192,7 @@ class Model(nn.Module):
                   gym_input_embed='series-encoding',
                   gym_network_architecture='Transformer',
                   gym_attn='self-attention',
+                  gym_feature_attn='self-attention',
                   gym_encoder_only=True,
                   gym_frozen=True,
                   ):
@@ -207,6 +208,7 @@ class Model(nn.Module):
         self.gym_input_embed = gym_input_embed
         self.gym_network_architecture = gym_network_architecture
         self.gym_attn = gym_attn
+        self.gym_feature_attn = gym_feature_attn
         self.gym_encoder_only = eval(gym_encoder_only) if isinstance(gym_encoder_only, str) else gym_encoder_only
         self.gym_frozen = eval(gym_frozen) if isinstance(gym_frozen, str) else gym_frozen
         # pipeline
@@ -406,6 +408,42 @@ class Model(nn.Module):
                                                   for i in range(self.configs.down_sampling_layers)])
             self.trend_mixing = nn.ModuleList([deepcopy(self.trend_mixing) 
                                                for i in range(self.configs.down_sampling_layers)])
+    
+        # feature attention
+        if self.gym_feature_attn == 'null':
+            self.feature_encoder = None
+        else:
+            if self.gym_feature_attn == 'self-attention':
+                FeatureAttention = FullAttention
+            elif self.gym_feature_attn == 'sparse-attention':
+                FeatureAttention = ProbAttention
+            elif self.gym_feature_attn == 'frequency-enhanced-attention':
+                FeatureAttention = FourierCrossAttention
+            else:
+                raise NotImplementedError
+
+            # Encoder
+            self.feature_embedding = DataEmbedding_wo_pos(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
+            self.feature_encoder = Encoder(
+                [
+                    EncoderLayer(
+                        AttentionLayer(FeatureAttention(configs=configs,
+                                                        mask_flag=False,
+                                                        factor=configs.factor,
+                                                        attention_dropout=configs.dropout, 
+                                                        output_attention=False),
+                                    configs.d_model, configs.n_heads),
+                        configs.d_model,
+                        configs.d_ff,
+                        dropout=configs.dropout,
+                        activation=configs.activation
+                    ) for l in range(configs.e_layers)
+                ],
+                norm_layer=torch.nn.LayerNorm(configs.d_model)
+            )
+            if self.series_sampling:
+                self.feature_embedding = nn.ModuleList(deepcopy(self.feature_embedding) for i in range(self.configs.down_sampling_layers + 1))
+                self.feature_encoder = nn.ModuleList(deepcopy(self.feature_encoder) for i in range(self.configs.down_sampling_layers + 1))
 
 
         # encoder(-decoder)                        
@@ -584,6 +622,16 @@ class Model(nn.Module):
         else:
             x_enc = self.series_norm(x_enc, 'norm')
 
+        # feature attention
+        if self.gym_feature_attn != 'null':
+            if isinstance(x_enc, list):
+                x_enc_fa = [self.feature_embedding[i](_, x_mark_enc[i]) for i, _ in enumerate(x_enc)]
+                enc_out_fa = [self.feature_encoder[i](_)[0] for i, _ in enumerate(x_enc_fa)]
+            else:
+                x_enc_fa = self.feature_embedding(x_enc, x_mark_enc)
+                enc_out_fa, _ = self.feature_encoder(x_enc_fa)
+            
+
         if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
             # BxSxD -> (BxD)xSx1
             if isinstance(x_enc, list):
@@ -674,6 +722,9 @@ class Model(nn.Module):
                 enc_out_trend = [self.encoder_trend[i](_, attn_mask=None, tau=tau[i], delta=delta[i])[0] for i, _ in enumerate(enc_out_trend)]
                 enc_out = [enc_out_seasonal_ + enc_out_trend_ for enc_out_seasonal_, enc_out_trend_
                             in zip(enc_out_seasonal, enc_out_trend)]
+                
+                if self.gym_feature_attn != 'null': 
+                    enc_out = [enc_out_ + enc_out_fa_ for enc_out_, enc_out_fa_ in zip(enc_out, enc_out_fa)]
                 del enc_out_seasonal, enc_out_trend
             else:
                 # series decomposition
@@ -695,6 +746,7 @@ class Model(nn.Module):
                 enc_out_seasonal, _ = self.encoder_seasonal(enc_out_seasonal, attn_mask=None, tau=tau, delta=delta)
                 enc_out_trend, _ = self.encoder_trend(enc_out_trend, attn_mask=None, tau=tau, delta=delta)
                 enc_out = enc_out_seasonal + enc_out_trend
+                if self.gym_feature_attn != 'null': enc_out = enc_out + enc_out_fa
                 del enc_out_seasonal, enc_out_trend
 
             if self.gym_input_embed == 'inverted-encoding':
@@ -761,8 +813,11 @@ class Model(nn.Module):
             # patching: [(bs * nvars) x patch_num x d_model]
             if isinstance(enc_out, list):
                 enc_out = [self.encoder[i](_, attn_mask=None, tau=tau[i], delta=delta[i])[0] for i, _ in enumerate(enc_out)]
+                if self.gym_feature_attn != 'null': 
+                    enc_out = [enc_out_ + enc_out_fa_ for enc_out_, enc_out_fa_ in zip(enc_out, enc_out_fa)]
             else:
                 enc_out, _ = self.encoder(enc_out, attn_mask=None, tau=tau, delta=delta)
+                if self.gym_feature_attn != 'null': enc_out = enc_out + enc_out_fa
 
             if self.gym_encoder_only: # encoder-only
                 if self.gym_input_embed == 'inverted-encoding':
