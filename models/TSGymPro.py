@@ -433,14 +433,14 @@ class Model(nn.Module):
                                                         factor=configs.factor,
                                                         attention_dropout=configs.dropout, 
                                                         output_attention=False),
-                                    configs.d_model, configs.n_heads),
-                        configs.d_model,
+                                    configs.seq_len, configs.n_heads),
+                        configs.seq_len,
                         configs.d_ff,
                         dropout=configs.dropout,
                         activation=configs.activation
                     ) for l in range(configs.e_layers)
                 ],
-                norm_layer=torch.nn.LayerNorm(configs.d_model)
+                norm_layer=torch.nn.LayerNorm(configs.seq_len)
             )
             if self.series_sampling:
                 self.feature_embedding = nn.ModuleList(deepcopy(self.feature_embedding) for i in range(self.configs.down_sampling_layers + 1))
@@ -627,10 +627,12 @@ class Model(nn.Module):
         if self.gym_feature_attn != 'null':
             if isinstance(x_enc, list):
                 x_enc_fa = [self.feature_embedding[i](_, x_mark_enc[i]) for i, _ in enumerate(x_enc)]
-                enc_out_fa = [self.feature_encoder[i](_)[0] for i, _ in enumerate(x_enc_fa)]
+                enc_out_fa = [self.feature_encoder[i](_.permute(0, 2, 1))[0] for i, _ in enumerate(x_enc_fa)]
+                enc_out_fa = [_.permute(0, 2, 1) for _ in enc_out_fa]
             else:
                 x_enc_fa = self.feature_embedding(x_enc, x_mark_enc)
-                enc_out_fa, _ = self.feature_encoder(x_enc_fa)
+                enc_out_fa, _ = self.feature_encoder(x_enc_fa.permute(0, 2, 1)) # BxSxD -> BxDxS
+                enc_out_fa = enc_out_fa.permute(0, 2, 1)
             
 
         if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
