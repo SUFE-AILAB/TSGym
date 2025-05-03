@@ -174,7 +174,7 @@ if __name__ == '__main__':
             # setting record of experiments
             exp = Exp(args)  # set experiments
             setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_lrs{}_{}'.format(
-                args.task_name,
+                args.task_name.replace('short_term_forecast', 'STF').replace('long_term_forecast', 'LTF'),
                 args.model_id,
                 args.model,
                 args.data,
@@ -214,7 +214,7 @@ if __name__ == '__main__':
     else:
         ii = 0
         setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_lrs{}_{}'.format(
-            args.task_name,
+            args.task_name.replace('short_term_forecast', 'STF').replace('long_term_forecast', 'LTF'),
             args.model_id,
             args.model,
             args.data,

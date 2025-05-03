@@ -424,29 +424,34 @@ class Model(nn.Module):
                 raise NotImplementedError
 
             # Encoder
-            self.feature_embedding = DataEmbedding_wo_pos(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
             self.feature_encoder = Encoder(
-                [
-                    EncoderLayer(
-                        AttentionLayer(FeatureAttention(configs=configs,
-                                                        mask_flag=False,
-                                                        factor=configs.factor,
-                                                        attention_dropout=configs.dropout, 
-                                                        output_attention=False),
-                                    configs.seq_len, configs.n_heads),
-                        configs.seq_len,
-                        configs.d_ff,
-                        dropout=configs.dropout,
-                        activation=configs.activation
-                    ) for l in range(configs.e_layers)
-                ],
-                norm_layer=torch.nn.LayerNorm(configs.seq_len)
-            )
+                    [
+                        EncoderLayer(
+                            AttentionLayer(FeatureAttention(configs=configs,
+                                                            mask_flag=False,
+                                                            factor=configs.factor,
+                                                            attention_dropout=configs.dropout, 
+                                                            output_attention=False),
+                                        configs.d_model, configs.n_heads),
+                            configs.d_model,
+                            configs.d_ff,
+                            dropout=configs.dropout,
+                            activation=configs.activation
+                        ) for l in range(configs.e_layers)
+                    ],
+                    norm_layer=torch.nn.LayerNorm(configs.d_model)
+                )
             if self.series_sampling:
-                self.feature_embedding = nn.ModuleList(deepcopy(self.feature_embedding) for i in range(self.configs.down_sampling_layers + 1))
+                self.feature_embedding = nn.ModuleList([DataEmbedding_inverted(configs.seq_len // (configs.down_sampling_window ** i),
+                                                                             configs.d_model, configs.embed, configs.freq, configs.dropout)
+                                                        for i in range(configs.down_sampling_layers + 1)])
                 self.feature_encoder = nn.ModuleList(deepcopy(self.feature_encoder) for i in range(self.configs.down_sampling_layers + 1))
-
-
+                self.seq_projector = nn.ModuleList([nn.Linear(configs.d_model, configs.seq_len // (configs.down_sampling_window ** i), bias=True)
+                                                    for i in range(configs.down_sampling_layers + 1)])
+            else:
+                self.feature_embedding = DataEmbedding_inverted(configs.seq_len, configs.d_model, configs.embed, configs.freq, configs.dropout)
+                self.seq_projector = nn.Linear(configs.d_model, configs.seq_len, bias=True)
+            
         # encoder(-decoder)                        
         if self.gym_network_architecture == 'Transformer':
             # Attention
@@ -626,15 +631,14 @@ class Model(nn.Module):
         # feature attention
         if self.gym_feature_attn != 'null':
             if isinstance(x_enc, list):
-                x_enc_fa = [self.feature_embedding[i](_, x_mark_enc[i]) for i, _ in enumerate(x_enc)]
-                enc_out_fa = [self.feature_encoder[i](_.permute(0, 2, 1))[0] for i, _ in enumerate(x_enc_fa)]
-                enc_out_fa = [_.permute(0, 2, 1) for _ in enc_out_fa]
+                x_enc_fa = [self.feature_embedding[i](_, None) for i, _ in enumerate(x_enc)]
+                enc_out_fa = [self.feature_encoder[i](_)[0] for i, _ in enumerate(x_enc_fa)]
+                enc_out_fa = [self.seq_projector[i](_).permute(0, 2, 1) for i, _ in enumerate(enc_out_fa)]
             else:
-                x_enc_fa = self.feature_embedding(x_enc, x_mark_enc)
-                enc_out_fa, _ = self.feature_encoder(x_enc_fa.permute(0, 2, 1)) # BxSxD -> BxDxS
-                enc_out_fa = enc_out_fa.permute(0, 2, 1)
+                x_enc_fa = self.feature_embedding(x_enc, None) # BxSxD -> BxDxS -> BxDxd_model
+                enc_out_fa, _ = self.feature_encoder(x_enc_fa) # BxDxd_model
+                enc_out_fa = self.seq_projector(enc_out_fa).permute(0, 2, 1) # BxDxd_model -> BxDxS -> BxSxD
             
-
         if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
             # BxSxD -> (BxD)xSx1
             if isinstance(x_enc, list):
@@ -726,8 +730,6 @@ class Model(nn.Module):
                 enc_out = [enc_out_seasonal_ + enc_out_trend_ for enc_out_seasonal_, enc_out_trend_
                             in zip(enc_out_seasonal, enc_out_trend)]
                 
-                if self.gym_feature_attn != 'null': 
-                    enc_out = [enc_out_ + enc_out_fa_ for enc_out_, enc_out_fa_ in zip(enc_out, enc_out_fa)]
                 del enc_out_seasonal, enc_out_trend
             else:
                 # series decomposition
@@ -749,7 +751,6 @@ class Model(nn.Module):
                 enc_out_seasonal, _ = self.encoder_seasonal(enc_out_seasonal, attn_mask=None, tau=tau, delta=delta)
                 enc_out_trend, _ = self.encoder_trend(enc_out_trend, attn_mask=None, tau=tau, delta=delta)
                 enc_out = enc_out_seasonal + enc_out_trend
-                if self.gym_feature_attn != 'null': enc_out = enc_out + enc_out_fa
                 del enc_out_seasonal, enc_out_trend
 
             if self.gym_input_embed == 'inverted-encoding':
@@ -761,11 +762,13 @@ class Model(nn.Module):
             elif self.gym_input_embed == 'series-encoding':
                 if self.series_sampling:
                     dec_out = [self.decoder_projection[i](_) for i, _ in enumerate(enc_out)]
+                    if self.gym_feature_attn != 'null': dec_out = [dec_out_ + enc_out_fa_ for dec_out_, enc_out_fa_ in zip(dec_out, enc_out_fa)]
                     dec_out = [self.head[i](_.permute(0, 2, 1)).permute(0, 2, 1) for i, _ in enumerate(dec_out)]
                     dec_out = [_[:, -self.pred_len:, :] for _ in dec_out]
                     dec_out = torch.stack(dec_out, dim=-1).sum(-1)
                 else:
                     dec_out = self.decoder_projection(enc_out) # BxSxd_model -> BxSxD
+                    if self.gym_feature_attn != 'null': dec_out = dec_out + enc_out_fa
                     dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
                     dec_out = dec_out[:, -self.pred_len:, :] # B x pred_len x D
                 if self.gym_channel_independent: dec_out = dec_out.reshape(B, D, self.pred_len).permute(0, 2, 1).contiguous()
@@ -816,11 +819,8 @@ class Model(nn.Module):
             # patching: [(bs * nvars) x patch_num x d_model]
             if isinstance(enc_out, list):
                 enc_out = [self.encoder[i](_, attn_mask=None, tau=tau[i], delta=delta[i])[0] for i, _ in enumerate(enc_out)]
-                if self.gym_feature_attn != 'null': 
-                    enc_out = [enc_out_ + enc_out_fa_ for enc_out_, enc_out_fa_ in zip(enc_out, enc_out_fa)]
             else:
                 enc_out, _ = self.encoder(enc_out, attn_mask=None, tau=tau, delta=delta)
-                if self.gym_feature_attn != 'null': enc_out = enc_out + enc_out_fa
 
             if self.gym_encoder_only: # encoder-only
                 if self.gym_input_embed == 'inverted-encoding':
@@ -830,11 +830,13 @@ class Model(nn.Module):
                 elif self.gym_input_embed == 'series-encoding':
                     if self.series_sampling:
                         dec_out = [self.decoder_projection[i](_) for i, _ in enumerate(enc_out)]
+                        if self.gym_feature_attn != 'null': dec_out = [dec_out_ + enc_out_fa_ for dec_out_, enc_out_fa_ in zip(dec_out, enc_out_fa)]
                         dec_out = [self.head[i](_.permute(0, 2, 1)).permute(0, 2, 1) for i, _ in enumerate(dec_out)]
                         dec_out = [_[:, -self.pred_len:, :] for _ in dec_out]
                         dec_out = torch.stack(dec_out, dim=-1).sum(-1)
                     else:
                         dec_out = self.decoder_projection(enc_out) # BxSxd_model -> BxSxD
+                        if self.gym_feature_attn != 'null': dec_out = dec_out + enc_out_fa
                         # projection to predicting length
                         dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
                         dec_out = dec_out[:, -self.pred_len:, :]
