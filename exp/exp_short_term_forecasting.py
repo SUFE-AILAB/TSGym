@@ -31,15 +31,21 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             model = self.model_dict[self.args.model].Model(self.args).float()
             self.save_suffix = ''
         else:
-            model_name, gym_series_norm, gym_series_decomp, gym_input_embed,\
-                  gym_network_architecture, gym_attn, gym_encoder_only = self.args.model.split('_')
+            model_name, gym_x_mark, gym_series_sampling, gym_series_norm, gym_series_decomp, \
+            gym_channel_independent, gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, \
+            gym_encoder_only, gym_frozen = self.args.model.split('_')
             model = self.model_dict[model_name].Model(self.args,
+                                                      gym_x_mark=gym_x_mark,
+                                                      gym_series_sampling=gym_series_sampling,
                                                       gym_series_norm=gym_series_norm,
                                                       gym_series_decomp=gym_series_decomp,
+                                                      gym_channel_independent=gym_channel_independent,
                                                       gym_input_embed=gym_input_embed,
                                                       gym_network_architecture=gym_network_architecture,
                                                       gym_attn=gym_attn,
-                                                      gym_encoder_only=gym_encoder_only).float()
+                                                      gym_feature_attn=gym_feature_attn,
+                                                      gym_encoder_only=gym_encoder_only,
+                                                      gym_frozen=gym_frozen).float()
             self.save_suffix = 'Gym'
 
         if self.args.use_multi_gpu and self.args.use_gpu:
@@ -79,7 +85,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion(self.args.loss)
-        mse = nn.MSELoss()
+        # mse = nn.MSELoss()
 
         best_model_path = path + '/' + 'checkpoint.pth'
         if os.path.exists(best_model_path):
@@ -113,7 +119,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
                     batch_y_mark = batch_y_mark[:, -self.args.pred_len:, f_dim:].to(self.device)
                     loss_value = criterion(batch_x, self.args.frequency_map, outputs, batch_y, batch_y_mark)
-                    loss_sharpness = mse((outputs[:, 1:, :] - outputs[:, :-1, :]), (batch_y[:, 1:, :] - batch_y[:, :-1, :]))
+                    # loss_sharpness = mse((outputs[:, 1:, :] - outputs[:, :-1, :]), (batch_y[:, 1:, :] - batch_y[:, :-1, :]))
                     loss = loss_value  # + loss_sharpness * 1e-5
 
                     train_loss.append(loss.item())
@@ -144,8 +150,8 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                 adjust_learning_rate(model_optim, epoch + 1, self.args)
 
             # recording training computational cost
-            np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz',
-                                time=np.mean(epoch_time_avg))
+            # np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz',
+            #                     time=np.mean(epoch_time_avg))
 
 
             self.model.load_state_dict(torch.load(best_model_path))
@@ -191,13 +197,14 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         x = torch.tensor(x, dtype=torch.float32).to(self.device)
         x = x.unsqueeze(-1)
 
+        checkpoint_path = os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')))
+            self.model.load_state_dict(torch.load(checkpoint_path))
 
-        folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
+        # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
+        # if not os.path.exists(folder_path):
+        #     os.makedirs(folder_path)
 
         self.model.eval()
         with torch.no_grad():
@@ -226,12 +233,22 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             for i in range(0, preds.shape[0], preds.shape[0] // 10):
                 gt = np.concatenate((x[i, :, 0], trues[i]), axis=0)
                 pd = np.concatenate((x[i, :, 0], preds[i, :, 0]), axis=0)
-                visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
-
+                # visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
         print('test shape:', preds.shape)
 
         # result save
-        folder_path = f'./m4_results{self.save_suffix}/' + self.args.model + '/'
+        if 'TSGym' in setting:
+            if 'Transformer' in setting:
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_transformer/' + setting + '/'
+            elif 'LLM' in setting:
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_LLM/' + setting + '/'
+            elif 'TSFM' in setting:
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_TSFM/' + setting + '/'
+            else:
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_non_transformer/' + setting + '/'
+        else:
+            folder_path = f'./results_short_term_forecasting/results{self.save_suffix}/' + setting + '/'
+
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
@@ -258,9 +275,13 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             print('owa:', owa_results)
 
             # save results
-            np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.model}.npz',
+            np.savez_compressed(folder_path + 'metrics.npz',
                                  smape=smape_results, mape=mape, mase=mase, owa=owa_results)
-
         else:
             print('After all 6 tasks are finished, you can calculate the averaged index')
+
+
+        if os.path.exists(checkpoint_path):
+            os.remove(checkpoint_path)
+
         return

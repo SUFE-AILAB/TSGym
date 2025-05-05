@@ -356,6 +356,7 @@ class Dataset_M4(Dataset):
         self.history_size = M4Meta.history_size[seasonal_patterns]
         self.window_sampling_limit = int(self.history_size * self.pred_len)
         self.flag = flag
+        self.device = _acquire_device(args)
 
         self.__read_data__()
 

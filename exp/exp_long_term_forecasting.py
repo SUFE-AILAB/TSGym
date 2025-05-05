@@ -65,41 +65,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             raise NotImplementedError
         return criterion
 
-    def vali(self, vali_data, vali_loader, criterion):
-        total_loss = []
-        self.model.eval()
-        with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
-                # batch_x = batch_x.float().to(self.device)
-                # batch_y = batch_y.float()
-
-                # batch_x_mark = batch_x_mark.float().to(self.device)
-                # batch_y_mark = batch_y_mark.float().to(self.device)
-
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
-
-                # encoder - decoder
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                batch_y = batch_y[:, -self.args.pred_len:, f_dim:]
-
-                pred = outputs.detach().cpu()
-                true = batch_y.detach().cpu()
-
-                loss = criterion(pred, true)
-
-                total_loss.append(loss)
-        total_loss = np.average(total_loss)
-        self.model.train()
-        return total_loss
-
     def train(self, setting):
         train_data, train_loader = self._get_data(flag='train')
         vali_data, vali_loader = self._get_data(flag='val')
@@ -135,10 +100,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(train_loader)):
                     iter_count += 1
                     model_optim.zero_grad()
-                    # batch_x = batch_x.float().to(self.device)
-                    # batch_y = batch_y.float().to(self.device)
-                    # batch_x_mark = batch_x_mark.float().to(self.device)
-                    # batch_y_mark = batch_y_mark.float().to(self.device)
 
                     # decoder input
                     dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
@@ -202,11 +163,41 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         return self.model
 
+    def vali(self, vali_data, vali_loader, criterion):
+        total_loss = []
+        self.model.eval()
+        with torch.no_grad():
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
+                # decoder input
+                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
+
+                # encoder - decoder
+                if self.args.use_amp:
+                    with torch.cuda.amp.autocast():
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                f_dim = -1 if self.args.features == 'MS' else 0
+                outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                batch_y = batch_y[:, -self.args.pred_len:, f_dim:]
+
+                pred = outputs.detach().cpu()
+                true = batch_y.detach().cpu()
+
+                loss = criterion(pred, true)
+
+                total_loss.append(loss)
+        total_loss = np.average(total_loss)
+        self.model.train()
+        return total_loss
+
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
+        checkpoint_path = os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')))
+            self.model.load_state_dict(torch.load(checkpoint_path))
 
         preds, trues = [], []
         # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
@@ -216,12 +207,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         self.model.eval()
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(test_loader)):
-                # batch_x = batch_x.float().to(self.device)
-                # batch_y = batch_y.float().to(self.device)
-
-                # batch_x_mark = batch_x_mark.float().to(self.device)
-                # batch_y_mark = batch_y_mark.float().to(self.device)
-
                 # decoder input
                 dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
                 dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
@@ -271,15 +256,15 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # result save
         if 'TSGym' in setting:
             if 'Transformer' in setting:
-                folder_path = f'./results{self.save_suffix}_transformer/' + setting + '/'
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_transformer/' + setting + '/'
             elif 'LLM' in setting:
-                folder_path = f'./results{self.save_suffix}_LLM/' + setting + '/'
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_LLM/' + setting + '/'
             elif 'TSFM' in setting:
-                folder_path = f'./results{self.save_suffix}_TSFM/' + setting + '/'
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_TSFM/' + setting + '/'
             else:
-                folder_path = f'./results{self.save_suffix}_non_transformer/' + setting + '/'
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_non_transformer/' + setting + '/'
         else:
-            folder_path = f'./results{self.save_suffix}/' + setting + '/'
+            folder_path = f'./results_long_term_forecasting/results{self.save_suffix}/' + setting + '/'
 
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
@@ -312,5 +297,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
         # np.save(folder_path + 'pred.npy', preds)
         # np.save(folder_path + 'true.npy', trues)
+
+        if os.path.exists(checkpoint_path):
+            os.remove(checkpoint_path)
 
         return

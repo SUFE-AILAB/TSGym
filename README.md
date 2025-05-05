@@ -54,6 +54,8 @@
     
 ps: w.r.t. LLM and TSFM, series-patching is the default option.
 
+### Network Training
+
 ## todo
 - <del>20241211: TransformerGym_None_series-patching_sparse-attention, loss全是0? (nan)</del>
 - inverse attention
