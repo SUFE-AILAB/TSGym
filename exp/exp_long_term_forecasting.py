@@ -25,9 +25,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             model = self.model_dict[self.args.model].Model(self.args).float()
             self.save_suffix = ''
         else:
-            model_name, gym_series_sampling, gym_series_norm, gym_series_decomp, gym_channel_independent, \
-                        gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, gym_encoder_only, gym_frozen = self.args.model.split('_')
+            model_name, gym_x_mark, gym_series_sampling, gym_series_norm, gym_series_decomp, \
+            gym_channel_independent, gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, \
+            gym_encoder_only, gym_frozen = self.args.model.split('_')
             model = self.model_dict[model_name].Model(self.args,
+                                                      gym_x_mark=gym_x_mark,
                                                       gym_series_sampling=gym_series_sampling,
                                                       gym_series_norm=gym_series_norm,
                                                       gym_series_decomp=gym_series_decomp,
@@ -53,7 +55,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return model_optim
 
     def _select_criterion(self):
-        criterion = nn.MSELoss()
+        if self.args.loss == "MSE":
+            criterion = nn.MSELoss()
+        elif self.args.loss == "MAE":
+            criterion = nn.L1Loss()
+        elif self.args.loss == 'HUBER':
+            criterion = nn.HuberLoss(delta=0.5)
+        else:
+            raise NotImplementedError
         return criterion
 
     def vali(self, vali_data, vali_loader, criterion):

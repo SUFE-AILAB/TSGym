@@ -185,22 +185,24 @@ class TSFM(nn.Module):
 
 class Model(nn.Module):
     def __init__(self, configs,
-                  gym_series_sampling=False,
-                  gym_series_norm=None,
-                  gym_series_decomp=None,
-                  gym_channel_independent=False,
-                  gym_input_embed='series-encoding',
-                  gym_network_architecture='Transformer',
-                  gym_attn='self-attention',
-                  gym_feature_attn='self-attention',
-                  gym_encoder_only=True,
-                  gym_frozen=True,
-                  ):
+                 gym_x_mark=True,
+                 gym_series_sampling=False,
+                 gym_series_norm=None,
+                 gym_series_decomp=None,
+                 gym_channel_independent=False,
+                 gym_input_embed='series-encoding',
+                 gym_network_architecture='Transformer',
+                 gym_attn='self-attention',
+                 gym_feature_attn='self-attention',
+                 gym_encoder_only=True,
+                 gym_frozen=True,
+                 ):
         super(Model, self).__init__()
         self.task_name = configs.task_name
         self.pred_len = configs.pred_len
         self.configs = configs
 
+        self.gym_x_mark = eval(gym_x_mark) if isinstance(gym_x_mark, str) else gym_x_mark
         self.gym_series_sampling = eval(gym_series_sampling) if isinstance(gym_series_sampling, str) else gym_series_sampling
         self.gym_series_norm = gym_series_norm
         self.gym_series_decomp = gym_series_decomp
@@ -573,7 +575,7 @@ class Model(nn.Module):
             else:
                 pass
 
-    def multi_scale_process_inputs(self, x_enc, x_mark_enc):
+    def multi_scale_process_inputs(self, x_enc, x_mark_enc=None):
         if self.configs.down_sampling_method == 'max':
             down_pool = torch.nn.MaxPool1d(self.configs.down_sampling_window, return_indices=False)
         elif self.configs.down_sampling_method == 'avg':
@@ -686,8 +688,8 @@ class Model(nn.Module):
                 enc_out_seasonal, enc_out_trend = [], []
                 for i, (seasonal_init_, trend_init_) in enumerate(zip(seasonal_init, trend_init)):
                     if self.gym_input_embed == 'series-encoding':
-                        enc_out_seasonal_ = self.enc_embedding[i](seasonal_init_, x_mark_enc[i]) # todo: x_mark
-                        enc_out_trend_ = self.enc_embedding[i](trend_init_, x_mark_enc[i])
+                        enc_out_seasonal_ = self.enc_embedding[i](seasonal_init_, x_mark_enc[i] if x_mark_enc is not None else None) # todo: x_mark
+                        enc_out_trend_ = self.enc_embedding[i](trend_init_, x_mark_enc[i] if x_mark_enc is not None else None)
                     elif self.gym_input_embed == 'series-patching':
                         enc_out_seasonal_, n_vars = self.enc_embedding[i](seasonal_init_.permute(0, 2, 1)) # BxSxD -> BxDxS
                         enc_out_trend_, n_vars = self.enc_embedding[i](trend_init_.permute(0, 2, 1))
@@ -794,8 +796,8 @@ class Model(nn.Module):
                 enc_out = self.enc_embedding(x_enc, x_mark_enc)
             elif self.gym_input_embed == 'series-encoding':
                 if self.series_sampling:
-                    assert len(x_enc) == len(x_mark_enc)
-                    enc_out = [self.enc_embedding[i](x_enc[i], x_mark_enc[i]) for i in range(len(x_enc))]
+                    if x_mark_enc is not None: assert len(x_enc) == len(x_mark_enc)
+                    enc_out = [self.enc_embedding[i](x_enc[i], x_mark_enc[i] if x_mark_enc is not None else None) for i in range(len(x_enc))]
                 else:
                     enc_out = self.enc_embedding(x_enc, x_mark_enc)
             elif self.gym_input_embed == 'series-patching':
@@ -897,5 +899,8 @@ class Model(nn.Module):
         return dec_out
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
-        dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+        if self.gym_x_mark:
+            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+        else:
+            dec_out = self.forecast(x_enc, None, x_dec, None)
         return dec_out

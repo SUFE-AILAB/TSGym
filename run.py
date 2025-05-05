@@ -170,9 +170,8 @@ if __name__ == '__main__':
         for ii in range(args.itr):
             # setting record of experiments
             exp = Exp(args)  # set experiments
-            setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_lrs{}_{}'.format(
+            setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
                 args.task_name.replace('short_term_forecast', 'STF').replace('long_term_forecast', 'LTF'),
-                args.model_id,
                 args.model,
                 args.data,
                 args.features,
@@ -180,17 +179,15 @@ if __name__ == '__main__':
                 args.label_len,
                 args.pred_len,
                 args.d_model,
-                args.n_heads,
                 args.e_layers,
                 args.d_layers,
                 args.d_ff,
-                args.expand,
-                args.d_conv,
                 args.factor,
                 args.embed,
                 args.distil,
                 args.des,
                 args.train_epochs,
+                args.loss,
                 args.learning_rate,
                 args.lradj, ii)
             
@@ -210,9 +207,8 @@ if __name__ == '__main__':
                 print(f'The results already exist! skip...')
     else:
         ii = 0
-        setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_epochs{}_lr{}_lrs{}_{}'.format(
+        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
             args.task_name.replace('short_term_forecast', 'STF').replace('long_term_forecast', 'LTF'),
-            args.model_id,
             args.model,
             args.data,
             args.features,
@@ -220,17 +216,15 @@ if __name__ == '__main__':
             args.label_len,
             args.pred_len,
             args.d_model,
-            args.n_heads,
             args.e_layers,
             args.d_layers,
             args.d_ff,
-            args.expand,
-            args.d_conv,
             args.factor,
             args.embed,
             args.distil,
             args.des, 
             args.train_epochs,
+            args.loss,
             args.learning_rate,
             args.lradj, ii)
         
