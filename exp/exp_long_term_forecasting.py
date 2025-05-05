@@ -263,6 +263,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         if 'TSGym' in setting:
             if 'Transformer' in setting:
                 folder_path = f'./results{self.save_suffix}_transformer/' + setting + '/'
+            elif 'LLM' in setting:
+                folder_path = f'./results{self.save_suffix}_LLM/' + setting + '/'
+            elif 'TSFM' in setting:
+                folder_path = f'./results{self.save_suffix}_TSFM/' + setting + '/'
             else:
                 folder_path = f'./results{self.save_suffix}_non_transformer/' + setting + '/'
         else:

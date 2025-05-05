@@ -107,7 +107,7 @@ class LLM(nn.Module):
                 for i, (name, param) in enumerate(self.encoder.named_parameters()):
                     if 'ln' in name or 'wpe' in name: # or 'mlp' in name:
                         param.requires_grad = True
-                    elif 'mlp' in name and configs.mlp == 1:
+                    elif 'mlp' in name:
                         param.requires_grad = True
                     else:
                         param.requires_grad = False
@@ -413,7 +413,7 @@ class Model(nn.Module):
         if self.gym_feature_attn == 'null':
             self.feature_encoder = None
         else:
-            if self.gym_channel_independent or self.gym_input_embed == 'inverted-encoding': raise NotImplementedError
+            if self.gym_channel_independent: raise NotImplementedError
             if self.gym_feature_attn == 'self-attention':
                 FeatureAttention = FullAttention
             elif self.gym_feature_attn == 'sparse-attention':

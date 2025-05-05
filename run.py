@@ -17,9 +17,6 @@ if __name__ == '__main__':
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)
 
-    # os.makedirs('./test_results', exist_ok=True)
-    # os.makedirs('./test_resultsGym', exist_ok=True)
-
     parser = argparse.ArgumentParser(description='TimesNet')
 
     logging.basicConfig(filename='error.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
