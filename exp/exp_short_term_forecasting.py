@@ -12,6 +12,7 @@ import time
 import warnings
 import numpy as np
 import pandas
+import shutil
 
 warnings.filterwarnings('ignore')
 
@@ -197,10 +198,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         x = torch.tensor(x, dtype=torch.float32).to(self.device)
         x = x.unsqueeze(-1)
 
-        checkpoint_path = os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')
+        checkpoint_path = f'./checkpoints{self.save_suffix}/' + setting
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(checkpoint_path))
+            self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, 'checkpoint.pth')))
 
         # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
         # if not os.path.exists(folder_path):
@@ -259,14 +260,13 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         forecasts_df.to_csv(folder_path + self.args.seasonal_patterns + '_forecast.csv')
 
         print(self.args.model)
-        file_path = f'./m4_results{self.save_suffix}/' + self.args.model + '/'
-        if 'Weekly_forecast.csv' in os.listdir(file_path) \
-                and 'Monthly_forecast.csv' in os.listdir(file_path) \
-                and 'Yearly_forecast.csv' in os.listdir(file_path) \
-                and 'Daily_forecast.csv' in os.listdir(file_path) \
-                and 'Hourly_forecast.csv' in os.listdir(file_path) \
-                and 'Quarterly_forecast.csv' in os.listdir(file_path):
-            m4_summary = M4Summary(file_path, self.args.root_path)
+        if 'Weekly_forecast.csv' in os.listdir(folder_path) \
+                and 'Monthly_forecast.csv' in os.listdir(folder_path) \
+                and 'Yearly_forecast.csv' in os.listdir(folder_path) \
+                and 'Daily_forecast.csv' in os.listdir(folder_path) \
+                and 'Hourly_forecast.csv' in os.listdir(folder_path) \
+                and 'Quarterly_forecast.csv' in os.listdir(folder_path):
+            m4_summary = M4Summary(folder_path, self.args.root_path)
             # m4_forecast.set_index(m4_winner_forecast.columns[0], inplace=True)
             smape_results, owa_results, mape, mase = m4_summary.evaluate()
             print('smape:', smape_results)
@@ -277,11 +277,18 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             # save results
             np.savez_compressed(folder_path + 'metrics.npz',
                                  smape=smape_results, mape=mape, mase=mase, owa=owa_results)
+            # 删除CSV文件
+            csv_files = ['Weekly_forecast.csv', 'Monthly_forecast.csv', 
+                        'Yearly_forecast.csv', 'Daily_forecast.csv',
+                        'Hourly_forecast.csv', 'Quarterly_forecast.csv']
+            for csv in csv_files:
+                if os.path.isfile(os.path.join(folder_path, csv)):
+                    os.remove(os.path.join(folder_path, csv))
         else:
             print('After all 6 tasks are finished, you can calculate the averaged index')
 
 
         if os.path.exists(checkpoint_path):
-            os.remove(checkpoint_path)
+            shutil.rmtree(checkpoint_path)
 
         return

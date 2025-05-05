@@ -166,12 +166,28 @@ if __name__ == '__main__':
     else:
         Exp = Exp_Long_Term_Forecast
 
-    if args.is_training:
-        for ii in range(args.itr):
-            # setting record of experiments
-            exp = Exp(args)  # set experiments
+    def setting_generator(args, ii):
+        if args.task_name == 'short_term_forecast':
+            setting = '{}_{}_{}_ft{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
+                args.task_name.replace('short_term_forecast', 'STF'),
+                args.model,
+                args.data,
+                args.features,
+                args.d_model,
+                args.e_layers,
+                args.d_layers,
+                args.d_ff,
+                args.factor,
+                args.embed,
+                args.distil,
+                args.des,
+                args.train_epochs,
+                args.loss,
+                args.learning_rate,
+                args.lradj, ii)
+        elif args.task_name == 'long_term_forecast':
             setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
-                args.task_name.replace('short_term_forecast', 'STF').replace('long_term_forecast', 'LTF'),
+                args.task_name.replace('long_term_forecast', 'LTF'),
                 args.model,
                 args.data,
                 args.features,
@@ -190,6 +206,16 @@ if __name__ == '__main__':
                 args.loss,
                 args.learning_rate,
                 args.lradj, ii)
+        else:
+            raise NotImplementedError
+        
+        return setting
+
+    if args.is_training:
+        for ii in range(args.itr):
+            # setting record of experiments
+            exp = Exp(args)  # set experiments
+            setting = setting_generator(args, ii)
             
             folder_path = f'./results/' + setting + '/'
             folder_pathGym = f'./resultsGym/' + setting + '/'
@@ -207,26 +233,7 @@ if __name__ == '__main__':
                 print(f'The results already exist! skip...')
     else:
         ii = 0
-        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
-            args.task_name.replace('short_term_forecast', 'STF').replace('long_term_forecast', 'LTF'),
-            args.model,
-            args.data,
-            args.features,
-            args.seq_len,
-            args.label_len,
-            args.pred_len,
-            args.d_model,
-            args.e_layers,
-            args.d_layers,
-            args.d_ff,
-            args.factor,
-            args.embed,
-            args.distil,
-            args.des, 
-            args.train_epochs,
-            args.loss,
-            args.learning_rate,
-            args.lradj, ii)
+        setting = setting_generator(args, ii)
         
         folder_path = f'./results/' + setting + '/'
         folder_pathGym = f'./resultsGym/' + setting + '/'

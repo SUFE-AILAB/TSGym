@@ -12,7 +12,7 @@ import warnings
 import numpy as np
 from utils.dtw_metric import dtw,accelerated_dtw
 from utils.augmentation import run_augmentation,run_augmentation_single
-
+import shutil
 warnings.filterwarnings('ignore')
 
 
@@ -194,10 +194,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
-        checkpoint_path = os.path.join(f'./checkpoints{self.save_suffix}/' + setting, 'checkpoint.pth')
+        checkpoint_path = f'./checkpoints{self.save_suffix}/' + setting
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(checkpoint_path))
+            self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, 'checkpoint.pth')))
 
         preds, trues = [], []
         # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
@@ -299,6 +299,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # np.save(folder_path + 'true.npy', trues)
 
         if os.path.exists(checkpoint_path):
-            os.remove(checkpoint_path)
+            shutil.rmtree(checkpoint_path)
 
         return
