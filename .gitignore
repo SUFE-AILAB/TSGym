@@ -167,6 +167,8 @@ results/
 resultsGym/
 resultsGym_non_transformer/
 resultsGym_transformer/
+resultsGym_LLM/
+resultsGym_TSFM/
 result_long_term_forecast.txt
 result_anomaly_detection.txt
 run_anylearn.py
