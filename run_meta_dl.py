@@ -18,7 +18,7 @@ import random
 class Meta():
     def __init__(self,
                  seed: int=42,
-                 task_name: str='long_term_forecast',
+                 task_name: str='LTF',
                  early_stopping=True,
                  batch_size=128,
                  d_model=64,
@@ -37,29 +37,31 @@ class Meta():
         self.epochs = epochs
 
     def components_processing(self, task_name, datasets, test_dataset,
+                              pred_len=96,
                               components_non_Transformer_path='./meta/components_non_Transformer.yaml',
                               components_path='./meta/components.yaml',
-                              result_path_non_transformer='./resultsGym_non_transformer',
-                              result_path_transformer='./resultsGym_transformer',
+                              result_path_non_transformer='./results_long_term_forecasting/resultsGym_non_transformer',
+                              result_path_transformer='./results_long_term_forecasting/resultsGym_transformer',
                               meta_feature_path='./get_meta_feature/meta_features',
-                              arg_component_balance=True,
-                              arg_add_new_dataset=True,
-                              arg_add_transformer=True):
+                              arg_component_balance=False,
+                              arg_add_new_dataset=False,
+                              arg_add_transformer=False):
         
         self.arg_component_balance = arg_component_balance
         self.arg_add_new_dataset = arg_add_new_dataset
         self.arg_add_transformer = arg_add_transformer
         self.test_dataset = test_dataset
         
-        file_list_non_transformer = [_ for _ in os.listdir(result_path_non_transformer) if task_name in _]
-        file_list_transformer = [_ for _ in os.listdir(result_path_transformer) if task_name in _]
-        print(f'number of non-transformer results: {len(file_list_non_transformer)}')
-        print(f'number of transformer results: {len(file_list_transformer)}')
+        if arg_add_transformer:
+            file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
+                                  os.listdir(os.path.join(result_path_transformer, dataset)) for dataset in datasets}
+        else:
+            file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) for dataset in datasets}
+        file_dict = {k: [_ for _ in v if f'pl{pred_len}' in _] for k, v in file_dict.items()}
+        print(f'number of combinations: {sum([len(_) for _ in file_dict.values()])}')
+        
 
-        file_list = file_list_non_transformer + file_list_transformer if arg_add_transformer else file_list_non_transformer
-        # datasets = list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list]))
-
-        # todo: 理论上component balance不同数据集之间应该取交集, 现在实验结果还比较少, 以数量替代
+        # todo: 理论上component balance不同数据集之间应该取交集, 现在实验结果还比较少, 以数量resample替代
         # file_list_resample = {dataset: [_ for _ in file_list if dataset in _] for dataset in datasets}
         # intersection = {}
         # for k, v in file_list_resample.items():
@@ -76,12 +78,12 @@ class Meta():
 
         if arg_component_balance:
             self.utils.set_seed(self.seed)
-            print(f'Before balance: {len(file_list)}')
-            file_list_resample = {dataset: [_ for _ in file_list if dataset in _] for dataset in datasets}
-            num_intersection = min([len(_) for _ in file_list_resample.values()])
-            file_list_resample = {k: random.sample(v, num_intersection) for k,v in file_list_resample.items()}
-            file_list = sorted(list(chain.from_iterable(list(file_list_resample.values()))))
-            print(f'After balance: {len(file_list)}')
+            print(f'Before balance: {sum([len(_) for _ in file_dict.values()])}')
+            file_dict_resample = file_dict.copy()
+            num_intersection = min([len(_) for _ in file_dict_resample.values()])
+            file_dict_resample = {k: random.sample(v, num_intersection) for k,v in file_dict_resample.items()}
+            file_dict = file_dict_resample
+            print(f'After balance: {sum([len(_) for _ in file_dict.values()])}')
 
         # load meta features
         name_dict = {dataset: dataset for dataset in datasets}
@@ -128,37 +130,44 @@ class Meta():
 
         # load result, metrics: mae, mse (√), rmse, mape, mspe
         metric_matrix_train, metric_matrix_test = {}, {}
-        for _ in file_list:
-            if any([d in _ for d in datasets_train]):
-                metric_matrix_train[_] = np.load(f'{result_path_transformer}/{_}/metrics.npy')[1] if 'Transformer' in _ else np.load(f'{result_path_non_transformer}/{_}/metrics.npy')[1]
-            elif dataset_test in _:
-                metric_matrix_test[_] = np.load(f'{result_path_transformer}/{_}/metrics.npy')[1]  if 'Transformer' in _ else np.load(f'{result_path_non_transformer}/{_}/metrics.npy')[1]
-            else:
-                pass
-
-        assert len(set([_.split('_')[3] for _ in list(metric_matrix_test.keys())])) == 1
-        assert list(set([_.split('_')[3] for _ in list(metric_matrix_test.keys())]))[0] == dataset_test
-        assert dataset_test not in list(set([_.split('_')[3] for _ in list(metric_matrix_train.keys())]))
+        for dataset in file_dict.keys():
+            for _ in file_dict[dataset]:
+                try:
+                    if dataset in datasets_train:
+                        metric_matrix_train['_'.join([dataset, _])] = np.load(f'{result_path_transformer}/{dataset}/{_}/metrics.npy')[1] if 'Transformer' in _ else np.load(f'{result_path_non_transformer}/{dataset}/{_}/metrics.npy')[1]
+                    elif dataset == dataset_test:
+                        metric_matrix_test['_'.join([dataset, _])] = np.load(f'{result_path_transformer}/{dataset}/{_}/metrics.npy')[1]  if 'Transformer' in _ else np.load(f'{result_path_non_transformer}/{dataset}/{_}/metrics.npy')[1]
+                    else:
+                        raise ValueError(f'{dataset} is not in datasets_train or dataset_test')
+                except FileNotFoundError:
+                    pass
+                    continue
 
         # training set
         trainset_components, trainset_meta_features, trainset_targets = [], [], []
         for k, v in metric_matrix_train.items():
-            k = k[re.search(re.escape(task_name), k).end()+1: ]
+            k = k.replace(f'{task_name}_', '')
             d = k.split('_')[0]
             if np.isnan(v):
                 continue
-
-            current_components = k[re.search(re.escape('TSGym'), k).end()+1: ].split('_')[:8] +\
-                                  [re.search(r'_sl(\d+)_', k).group(1),
-                                   re.search(r'_dm(\d+)_', k).group(1),
-                                   re.search(r'_df(\d+)_', k).group(1),
-                                   re.search(r'_el(\d+)_', k).group(1),
-                                   re.search(r'_epochs(\d+)_', k).group(1),
-                                   re.search(r'_lr([\d.]+)_', k).group(1),
-                                   re.search(r'lrs([^_]+)', k).group(1)]
+            
+            k_HP = '_'.join(k[re.search(re.escape('TSGym'), k).end()+1: ].split('_')[11:])
+            current_components = k[re.search(re.escape('TSGym'), k).end()+1: ].split('_')[:11] +\
+                                  [re.search(r'_sl(\d+)_', k_HP).group(1),
+                                   re.search(r'_dm(\d+)_', k_HP).group(1),
+                                   re.search(r'_df(\d+)_', k_HP).group(1),
+                                   re.search(r'_el(\d+)_', k_HP).group(1),
+                                   re.search(r'_epochs(\d+)_', k_HP).group(1),
+                                   re.search(r'lf([^_]+)', k_HP).group(1),
+                                   re.search(r'_lr([\d.]+)_', k_HP).group(1),
+                                   re.search(r'lrs([^_]+)', k_HP).group(1)]
             assert len(current_components) == len(self.components)
             current_components = {list(self.components.keys())[i]: v for i, v in enumerate(current_components)}
-            current_components = [self.components[k][v] for k, v in current_components.items()]
+            try:
+                current_components = [self.components[k][v] for k, v in current_components.items()]
+            except KeyError:
+                print(f'{k} is not in components')
+                continue
             trainset_components.append(current_components)
             trainset_meta_features.append(self.meta_features[d])
             trainset_targets.append([d, v])
@@ -166,17 +175,19 @@ class Meta():
         # testing set
         testset_components, testset_meta_features, testset_targets = [], [], []
         for k, v in metric_matrix_test.items():
-            k = k[re.search(re.escape(task_name), k).end()+1: ]
+            k = k.replace(f'{task_name}_', '')
             d = k.split('_')[0]
 
-            current_components = k[re.search(re.escape('TSGym'), k).end()+1: ].split('_')[:8] +\
-                                  [re.search(r'_sl(\d+)_', k).group(1),
-                                   re.search(r'_dm(\d+)_', k).group(1),
-                                   re.search(r'_df(\d+)_', k).group(1),
-                                   re.search(r'_el(\d+)_', k).group(1),
-                                   re.search(r'_epochs(\d+)_', k).group(1),
-                                   re.search(r'_lr([\d.]+)_', k).group(1),
-                                   re.search(r'lrs([^_]+)', k).group(1)]
+            k_HP = '_'.join(k[re.search(re.escape('TSGym'), k).end()+1: ].split('_')[11:])
+            current_components = k[re.search(re.escape('TSGym'), k).end()+1: ].split('_')[:11] +\
+                                  [re.search(r'_sl(\d+)_', k_HP).group(1),
+                                   re.search(r'_dm(\d+)_', k_HP).group(1),
+                                   re.search(r'_df(\d+)_', k_HP).group(1),
+                                   re.search(r'_el(\d+)_', k_HP).group(1),
+                                   re.search(r'_epochs(\d+)_', k_HP).group(1),
+                                   re.search(r'lf([^_]+)', k_HP).group(1),
+                                   re.search(r'_lr([\d.]+)_', k_HP).group(1),
+                                   re.search(r'lrs([^_]+)', k_HP).group(1)]
             assert len(current_components) == len(self.components)
             current_components = {list(self.components.keys())[i]: v for i, v in enumerate(current_components)}
             current_components = [self.components[k][v] for k, v in current_components.items()]
@@ -351,9 +362,8 @@ class Meta():
 
 
 
-meta = Meta(); task_name = 'long_term_forecast'
-file_list = [_ for _ in os.listdir('./resultsGym_non_transformer') if task_name in _]
-datasets = sorted(list(set([_[re.search(re.escape(task_name), _).end()+1:].split('_')[0] for _ in file_list])))
+meta = Meta(); task_name = 'LTF'
+datasets = sorted([_ for _ in os.listdir('./results_long_term_forecasting/resultsGym_non_transformer')])
 
 os.makedirs('meta/logfiles', exist_ok=True)
 os.makedirs('meta/results', exist_ok=True)

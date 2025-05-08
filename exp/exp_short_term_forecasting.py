@@ -150,11 +150,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
                 adjust_learning_rate(model_optim, epoch + 1, self.args)
 
-            # recording training computational cost
-            # np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz',
-            #                     time=np.mean(epoch_time_avg))
-
-
+            self.train_cost = np.mean(epoch_time_avg)
             self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
@@ -238,17 +234,18 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         print('test shape:', preds.shape)
 
         # result save
+        dataset = self.args.model_id.split('_')[0]
         if 'TSGym' in setting:
             if 'Transformer' in setting:
-                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_transformer/' + setting + '/'
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_transformer/{dataset}/' + setting + '/'
             elif 'LLM' in setting:
-                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_LLM/' + setting + '/'
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_LLM/{dataset}/' + setting + '/'
             elif 'TSFM' in setting:
-                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_TSFM/' + setting + '/'
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_TSFM/{dataset}/' + setting + '/'
             else:
-                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_non_transformer/' + setting + '/'
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_non_transformer/{dataset}/' + setting + '/'
         else:
-            folder_path = f'./results_short_term_forecasting/results{self.save_suffix}/' + setting + '/'
+            folder_path = f'./results_short_term_forecasting/results{self.save_suffix}/{dataset}/' + setting + '/'
 
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
@@ -276,7 +273,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
             # save results
             np.savez_compressed(folder_path + 'metrics.npz',
-                                 smape=smape_results, mape=mape, mase=mase, owa=owa_results)
+                                 smape=smape_results, mape=mape, mase=mase, owa=owa_results, train_cost=self.train_cost)
             # 删除CSV文件
             csv_files = ['Weekly_forecast.csv', 'Monthly_forecast.csv', 
                         'Yearly_forecast.csv', 'Daily_forecast.csv',

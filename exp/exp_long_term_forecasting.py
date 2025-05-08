@@ -154,11 +154,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     break
 
                 adjust_learning_rate(model_optim, epoch + 1, self.args)
-
-            # recording training computational cost
-            # np.savez_compressed(f'./test_results{self.save_suffix}/{self.args.data}_{self.args.seasonal_patterns}_{self.args.model}_fit_time_per_epoch.npz',
-            #                     time=np.mean(epoch_time_avg))
-            
+  
+            self.train_cost = np.mean(epoch_time_avg)
             self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
@@ -254,17 +251,18 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         print('test shape:', preds.shape, trues.shape)
 
         # result save
+        dataset = self.args.model_id.split('_')[0]
         if 'TSGym' in setting:
             if 'Transformer' in setting:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_transformer/' + setting + '/'
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_transformer/{dataset}/' + setting + '/'
             elif 'LLM' in setting:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_LLM/' + setting + '/'
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_LLM/{dataset}/' + setting + '/'
             elif 'TSFM' in setting:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_TSFM/' + setting + '/'
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_TSFM/{dataset}/' + setting + '/'
             else:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_non_transformer/' + setting + '/'
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_non_transformer/{dataset}/' + setting + '/'
         else:
-            folder_path = f'./results_long_term_forecasting/results{self.save_suffix}/' + setting + '/'
+            folder_path = f'./results_long_term_forecasting/results{self.save_suffix}/{dataset}/' + setting + '/'
 
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
@@ -294,7 +292,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # f.write('\n')
         # f.close()
 
-        np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
+        np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe, self.train_cost]))
         # np.save(folder_path + 'pred.npy', preds)
         # np.save(folder_path + 'true.npy', trues)
 
