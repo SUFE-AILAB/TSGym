@@ -37,7 +37,7 @@ class Meta():
         self.epochs = epochs
 
     def components_processing(self, task_name, datasets, test_dataset,
-                              pred_len=96,
+                              pred_len_1=96, pred_len_2=24,
                               components_non_Transformer_path='./meta/components_non_Transformer.yaml',
                               components_path='./meta/components.yaml',
                               result_path_non_transformer='./results_long_term_forecasting/resultsGym_non_transformer',
@@ -51,14 +51,25 @@ class Meta():
         self.arg_add_new_dataset = arg_add_new_dataset
         self.arg_add_transformer = arg_add_transformer
         self.test_dataset = test_dataset
+
+        # 统计跑完组合个数
+        for dataset in datasets:
+            file_list_non_transformer = os.listdir(os.path.join(result_path_non_transformer, dataset))
+            file_list_transformer = os.listdir(os.path.join(result_path_transformer, dataset))
+            pred_lens = [96, 192, 336, 720] if dataset != 'ili' else [24, 36, 48, 60]
+            for pl in pred_lens:
+                file_list_sub_non_transformer = [_ for _ in file_list_non_transformer if f'pl{pl}' in _]
+                file_list_sub_transformer = [_ for _ in file_list_transformer if f'pl{pl}' in _]
+                logger.info(f'Dataset: {dataset}, Pred Length: {pl}, number of combinations (non Transformer/Transformer): {len(file_list_sub_non_transformer)}/{len(file_list_sub_transformer)}')
         
         if arg_add_transformer:
             file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
                                   os.listdir(os.path.join(result_path_transformer, dataset)) for dataset in datasets}
         else:
             file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) for dataset in datasets}
-        file_dict = {k: [_ for _ in v if f'pl{pred_len}' in _] for k, v in file_dict.items()}
-        print(f'number of combinations: {sum([len(_) for _ in file_dict.values()])}')
+        file_dict = {k: [_ for _ in v if f'pl{pred_len_2}' in _] if k == 'ili' else [_ for _ in v if f'pl{pred_len_1}' in _]
+                        for k, v in file_dict.items()}
+        logger.info(f'number of combinations: {sum([len(_) for _ in file_dict.values()])}')
         
 
         # todo: 理论上component balance不同数据集之间应该取交集, 现在实验结果还比较少, 以数量resample替代
@@ -359,16 +370,18 @@ class Meta():
         assert len(pred_ranks) == len(true_ranks)
 
         return np.mean(pred_ranks_for_true_topk), np.mean(true_ranks_for_pred_topk), len(pred_ranks), top1_perf
+    
+os.makedirs('meta/logfiles', exist_ok=True)
+os.makedirs('meta/results', exist_ok=True)
 
-
+logging.basicConfig(filename=f'meta/logfiles/meta.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger()
 
 meta = Meta(); task_name = 'LTF'
 datasets = sorted([_ for _ in os.listdir('./results_long_term_forecasting/resultsGym_non_transformer')])
 
-os.makedirs('meta/logfiles', exist_ok=True)
-os.makedirs('meta/results', exist_ok=True)
-logging.basicConfig(filename=f'meta/logfiles/meta.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger()
+
+
 
 for test_dataset in datasets:
     # processing data for meta learning

@@ -165,7 +165,8 @@ checkpoints/
 checkpointsGym/
 results/
 resultsGym/
-resultsGym_non_transformer/
+results_short_term_forecasting/*
+results_long_term_forecasting/*
 resultsGym_transformer/
 resultsGym_LLM/
 resultsGym_TSFM/
