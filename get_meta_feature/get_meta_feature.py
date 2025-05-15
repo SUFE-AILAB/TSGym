@@ -4,10 +4,14 @@ import tsfel
 import os
 import pandas as pd
 import logging
+from data_provider.m4 import M4Dataset, M4Meta
 import warnings
 warnings.filterwarnings("ignore")
 
-def get_meata_feature(df_raw, data_name,flag,seq_len):
+seasonal_patterns='Yearly'
+
+
+def get_data(df_raw, data_name,flag,seq_len):
     assert flag in ['train','test','val','all']
     type_map = {'train': 0, 'val': 1, 'test': 2, 'all':3}
     set_type = type_map[flag]
@@ -33,6 +37,10 @@ def get_meata_feature(df_raw, data_name,flag,seq_len):
     border2 = border2s[set_type]
     data = df_raw.values
     data = data[border1:border2]
+    return data
+
+def get_meata_feature(df_raw, data_name,flag,seq_len):
+    data = get_data(df_raw, data_name,flag,seq_len)
     
     # get meat feature
     cfg = tsfel.get_features_by_domain() # Extracts the temporal, statistical and spectral feature sets.
@@ -40,9 +48,7 @@ def get_meata_feature(df_raw, data_name,flag,seq_len):
     for i in range(data.shape[1]):
         X = tsfel.time_series_features_extractor(cfg, data[:,i], fs=100,verbose=0).values
         meta_feature.append(X)
-    # print(len(meta_feature))
     meta_feature = np.concatenate(meta_feature,axis=0)
-    # print(meta_feature.shape)
     
     mean = np.mean(meta_feature,axis=0)
     # print(mean.shape)
@@ -84,12 +90,46 @@ def main(root_path):
                     logger.info(f"meta_feature_{data_name}_{flag}_{seq_len} succees!\n")
                 except Exception as e:
                     logger.error(f"meta_feature_{data_name}_{flag}_{seq_len} unfinished:{e}!\n")
+                    
+def get_meta_feature_m4(series_list):
+    # get meat feature
+    cfg = tsfel.get_features_by_domain() # Extracts the temporal, statistical and spectral feature sets.
+    meta_feature = []
+    for series in series_list:
+        X = tsfel.time_series_features_extractor(cfg, series, fs=100,verbose=0,n_jobs=-1).values
+        meta_feature.append(X)
+    meta_feature = np.concatenate(meta_feature,axis=0)
+    mean = np.mean(meta_feature,axis=0)
+    # print(mean.shape)
+    std = np.std(meta_feature,axis=0)
+    min_val = np.min(meta_feature,axis=0)
+    q25 = np.percentile(meta_feature, 25,axis=0)
+    median = np.median(meta_feature,axis=0)
+    q75 = np.percentile(meta_feature, 75,axis=0)
+    max_val = np.max(meta_feature,axis=0)
+    range_val = max_val - min_val
+    iqr = q75 - q25
+    combined_features = np.stack([mean, std, min_val, q25, median, q75, max_val, range_val, iqr])
+    return combined_features
+
+def run_m4():
+    root_path = '/data/nishome/user1/minqi/TSGym/dataset/m4'
+    dataset = M4Dataset.load(training=True, dataset_file=root_path)
+    for seasonal_patterns in ['Yearly','Quarterly','Weekly','Daily','Hourly']:
+        timeseries = [v[~np.isnan(v)] for v in dataset.values[dataset.groups == seasonal_patterns]]
+        try:
+            meta_feature = get_meta_feature_m4(timeseries)
+            np.savez_compressed(f'./meta_features/meta_feature_M4_{seasonal_patterns}.npz',meta_feature=meta_feature)
+            logger.info(f"meta_feature_{seasonal_patterns} succees!\n")
+        except Exception as e:
+            logger.error(f"meta_feature_{seasonal_patterns} unfinished:{e}!\n")
 
 
 os.makedirs('logfiles', exist_ok=True)
 os.makedirs('meta_features', exist_ok=True)
-logging.basicConfig(filename=f'logfiles/meta.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+logging.basicConfig(filename=f'logfiles/meta_m4.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger()
 
-main('/root/minqi/TSGym/dataset')
+# main('/data/nishome/user1/minqi/TSGym/dataset/')
+run_m4()
     

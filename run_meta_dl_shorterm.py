@@ -38,30 +38,27 @@ class Meta():
         self.epochs = epochs
 
     def components_processing(self, task_name, datasets, test_dataset,
-                              pred_len_1=192, pred_len_2=36,
+                              frequency='Yearly',
                               metric='mse',
                               components_path='./meta/components.yaml',
                               components_add_Transformer_path='./meta/components_add_Transformer.yaml',
-                              components_add_LLM_path='./meta/components_add_LLM.yaml',
-                              components_add_TSFM_path='./meta/components_add_TSFM.yaml',
-                              result_path_non_transformer='./results_long_term_forecasting/resultsGym_non_transformer',
-                              result_path_transformer='./results_long_term_forecasting/resultsGym_transformer',
-                              result_path_LLM='./results_long_term_forecasting/resultsGym_LLM',
-                              result_path_TSFM='./results_long_term_forecasting/resultsGym_TSFM',
+                              components_add_LLM_TSFM_path='./meta/components_add_LLM_TSFM.yaml',
+                              result_path_non_transformer='./results_short_term_forecasting/resultsGym_non_transformer',
+                              result_path_transformer='./results_short_term_forecasting/resultsGym_transformer',
+                              result_path_LLM='./results_short_term_forecasting/resultsGym_LLM',
+                              result_path_TSFM='./results_short_term_forecasting/resultsGym_TSFM',
                               meta_feature_path='./get_meta_feature/meta_features',
                               arg_component_balance=False,
                               arg_add_new_dataset=False,
                               arg_add_transformer=False,
-                              arg_add_LLM=False,
-                              arg_add_TSFM=False,
+                              arg_add_LLM_TSFM=False,
                               arg_all_periods=False):
         self.pred_len_1, self.pred_len_2 = pred_len_1, pred_len_2
         
         self.arg_component_balance = arg_component_balance
         self.arg_add_new_dataset = arg_add_new_dataset
         self.arg_add_transformer = arg_add_transformer
-        self.arg_add_LLM = arg_add_LLM
-        self.arg_add_TSFM = arg_add_TSFM
+        self.arg_add_LLM_TSFM = arg_add_LLM_TSFM
         self.arg_all_periods = arg_all_periods
         self.test_dataset = test_dataset
 
@@ -69,14 +66,14 @@ class Meta():
         for dataset in datasets:
             file_list_non_transformer = os.listdir(os.path.join(result_path_non_transformer, dataset))
             file_list_transformer = os.listdir(os.path.join(result_path_transformer, dataset))
-            if arg_add_LLM or arg_add_TSFM:
+            if arg_add_LLM_TSFM:
                 file_list_LLM = os.listdir(os.path.join(result_path_LLM, dataset))
                 file_list_TSFM = os.listdir(os.path.join(result_path_TSFM, dataset))
             pred_lens = [96, 192, 336, 720] if dataset != 'ili' else [24, 36, 48, 60]
             for pl in pred_lens:
                 file_list_sub_non_transformer = [_ for _ in file_list_non_transformer if f'pl{pl}' in _]
                 file_list_sub_transformer = [_ for _ in file_list_transformer if f'pl{pl}' in _]
-                if arg_add_LLM or arg_add_TSFM:
+                if arg_add_LLM_TSFM:
                     file_list_sub_LLM = [_ for _ in file_list_LLM if f'pl{pl}' in _]
                     file_list_sub_TSFM = [_ for _ in file_list_TSFM if f'pl{pl}' in _]
                     logger.info(f'Dataset: {dataset}, Pred Length: {pl}, number of combinations (non Transformer/Transformer/LLM/TSFM): {len(file_list_sub_non_transformer)}/{len(file_list_sub_transformer)}/{len(file_list_sub_LLM)}/{len(file_list_sub_TSFM)}')
@@ -86,11 +83,9 @@ class Meta():
         if arg_add_transformer:
             file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
                                   os.listdir(os.path.join(result_path_transformer, dataset)) for dataset in datasets}
-        elif arg_add_LLM:
+        elif arg_add_LLM_TSFM:
             file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
-                                  os.listdir(os.path.join(result_path_LLM, dataset)) for dataset in datasets}
-        elif arg_add_TSFM:
-            file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
+                                  os.listdir(os.path.join(result_path_LLM, dataset)) +\
                                   os.listdir(os.path.join(result_path_TSFM, dataset)) for dataset in datasets}
         else:
             file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) for dataset in datasets}
@@ -105,22 +100,6 @@ class Meta():
             file_dict_test = file_dict.copy()
 
         logger.info(f'number of combinations: {sum([len(_) for _ in file_dict.values()])}')
-        
-
-        # todo: 理论上component balance不同数据集之间应该取交集, 现在实验结果还比较少, 以数量resample替代
-        # file_list_resample = {dataset: [_ for _ in file_list if dataset in _] for dataset in datasets}
-        # intersection = {}
-        # for k, v in file_list_resample.items():
-        #     v = ['-'.join(vv[re.search(re.escape('TSGym'), vv).end()+1: ].split('_')[:8] +\
-        #                     [re.search(r'_sl(\d+)_', vv).group(1),
-        #                      re.search(r'_dm(\d+)_', vv).group(1),
-        #                      re.search(r'_df(\d+)_', vv).group(1),
-        #                      re.search(r'_el(\d+)_', vv).group(1),
-        #                      re.search(r'_epochs(\d+)_', vv).group(1),
-        #                      re.search(r'_lr([\d.]+)_', vv).group(1),
-        #                      re.search(r'lrs([^_]+)', vv).group(1)]) for vv in v]
-        #     intersection[k] = v
-        # set.intersection(*map(set, list(file_list_resample.values())))
 
         if arg_component_balance:
             self.utils.set_seed(self.seed)
@@ -169,11 +148,8 @@ class Meta():
         if arg_add_transformer:
             with open(components_add_Transformer_path, 'r') as f:
                 self.components = yaml.safe_load(f)
-        elif arg_add_LLM:
-            with open(components_add_LLM_path, 'r') as f:
-                self.components = yaml.safe_load(f)
-        elif arg_add_TSFM:
-            with open(components_add_TSFM_path, 'r') as f:
+        elif arg_add_LLM_TSFM:
+            with open(components_add_LLM_TSFM_path, 'r') as f:
                 self.components = yaml.safe_load(f)
         else:
             with open(components_path, 'r') as f:
@@ -388,7 +364,7 @@ class Meta():
                 top1_perf_epoch_mae.append(top1_perf_mase)
                 top_name_epoch.append(top_name)
 
-        np.savez_compressed(f'./meta/results/{self.test_dataset}-component_balance_{self.arg_component_balance}-add_transformer_{self.arg_add_transformer}-add_LLM_{self.arg_add_LLM}-add_TSFM_{self.arg_add_TSFM}-all_periods_{self.arg_all_periods}_{self.pred_len_1}_{self.pred_len_2}.npz',
+        np.savez_compressed(f'./meta/results/{self.test_dataset}-component_balance_{self.arg_component_balance}-add_transformer_{self.arg_add_transformer}-add_LLM_TSFM_{self.arg_add_LLM_TSFM}-all_periods_{self.arg_all_periods}_{self.pred_len_1}_{self.pred_len_2}.npz',
                             pred_ranks_for_true_topk_epoch=pred_ranks_for_true_topk_epoch,
                             true_ranks_for_pred_topk_epoch=true_ranks_for_pred_topk_epoch,
                             total_num=total_num,
@@ -463,13 +439,11 @@ logging.basicConfig(filename=f'meta/logfiles/meta.log', filemode='a', format='%(
 logger = logging.getLogger()
 
 meta = Meta(); task_name = 'LTF'
-arg_component_balance, arg_add_transformer, arg_add_LLM, arg_add_TSFM, arg_all_periods = False, False, True, False, False
-# if arg_add_LLM or arg_add_TSFM:
-#     datasets = ['ETTh1', 'ETTh2', 'Exchange', 'ili']
-# else:
-#     datasets = sorted([_ for _ in os.listdir('./results_long_term_forecasting/resultsGym_non_transformer')])
-
-datasets = ['ETTh1', 'ETTh2', 'Exchange', 'ili']
+arg_component_balance, arg_add_transformer, arg_add_LLM_TSFM, arg_all_periods = True, True, False, True
+if arg_add_LLM_TSFM:
+    datasets = ['ETTh1', 'ETTh2', 'Exchange', 'ili']
+else:
+    datasets = sorted([_ for _ in os.listdir('./results_long_term_forecasting/resultsGym_non_transformer')])
 
 for test_dataset in datasets:
     for pred_len_1, pred_len_2 in zip([96, 192, 336, 720], [24, 36, 48, 60]):
@@ -481,8 +455,7 @@ for test_dataset in datasets:
                                    pred_len_2=pred_len_2,
                                    arg_component_balance=arg_component_balance,
                                    arg_add_transformer=arg_add_transformer,
-                                   arg_add_LLM=arg_add_LLM,
-                                   arg_add_TSFM=arg_add_TSFM,
+                                   arg_add_LLM_TSFM=arg_add_LLM_TSFM,
                                    arg_all_periods=arg_all_periods)
         # init model
         meta.meta_init()
