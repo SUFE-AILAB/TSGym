@@ -2,7 +2,7 @@
 
 ## Design Dimensions
 
-### Data Augmentation (todo)
+### Data Augmentation
 - tslib
 
 ### ↓ Series Normalization
@@ -55,19 +55,3 @@
 ps: w.r.t. LLM and TSFM, series-patching is the default option.
 
 ### Network Training
-
-## todo
-- <del>20241211: TransformerGym_None_series-patching_sparse-attention, loss全是0? (nan)</del>
-- inverse attention
-- <del>multi-resolution (cross-attention based)</del>
-- <del>channel-independent</del>
-- decoder structure
-- [iTransformer中的截断问题](https://github.com/thuml/Time-Series-Library/blob/cdf8f0c3c5e79c1e8152e71dc35009ae46a6a920/models/iTransformer.py#L101C60-L101C70)
-- seasonal/trend用不同的enc_embedding?
-- TwoStageAttention layer?
-- MLP-based multi-resolution mixing
-- data augmentation
-- bug: seq_len=192和series-patching
-- 有些module无法组合: 例如inverted-encoding + series-patching
-- x_mark的有效性; feature_attention n_head和seq_len的不兼容
-- loss function的调整
