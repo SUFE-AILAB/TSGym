@@ -86,7 +86,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             scaler = torch.cuda.amp.GradScaler()
 
         best_model_path = path + '/' + 'checkpoint.pth'
-        if os.path.exists(best_model_path):
+        if os.path.exists(best_model_path) and False: # TODO: 暂时不跳过实验
             print(f'The model file already exists! loading...')
             self.model.load_state_dict(torch.load(best_model_path))
         else:

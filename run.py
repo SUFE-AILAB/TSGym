@@ -104,7 +104,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_gpu', type=bool, default=True, help='use gpu')
     parser.add_argument('--gpu', type=int, default=0, help='gpu')
     parser.add_argument('--use_multi_gpu', action='store_true', help='use multiple gpus', default=True)
-    parser.add_argument('--devices', type=str, default='0', help='device ids of multile gpus')
+    parser.add_argument('--devices', type=str, default='0,1,2', help='device ids of multile gpus')
 
     # de-stationary projector params
     parser.add_argument('--p_hidden_dims', type=int, nargs='+', default=[128, 128],
@@ -138,6 +138,18 @@ if __name__ == '__main__':
     # TimeXer
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
 
+    # DUET
+    parser.add_argument('--CI', action='store_true', help='channel independence', default=False)
+    parser.add_argument('--hidden_size', type=int, default=256, help='DUET hidden size')
+    parser.add_argument('--win_size', type=int, default=2, help='DUET window size')
+    parser.add_argument('--output_attention', default=False, action="store_true", help="output attention")
+    parser.add_argument('--stride', type=int, default=8, help='patch stride')
+    parser.add_argument('--period_len', type=int, default=4, help='period lenth')
+    parser.add_argument('--fc_dropout', type=float, default=0.2, help='fc dropout')
+    parser.add_argument('--num_experts', type=int, default=4, help='number of experts')
+    parser.add_argument('--noisy_gating', action='store_true', help='noisy gating', default=False)
+    parser.add_argument('--k', type=int, default=1, help='noisy gating top k')
+    
     args = parser.parse_args()
     # args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
     args.use_gpu = True if torch.cuda.is_available() else False

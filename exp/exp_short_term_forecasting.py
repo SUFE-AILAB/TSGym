@@ -275,12 +275,12 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             np.savez_compressed(folder_path + 'metrics.npz',
                                  smape=smape_results, mape=mape, mase=mase, owa=owa_results, train_cost=self.train_cost)
             # 删除CSV文件
-            csv_files = ['Weekly_forecast.csv', 'Monthly_forecast.csv', 
-                        'Yearly_forecast.csv', 'Daily_forecast.csv',
-                        'Hourly_forecast.csv', 'Quarterly_forecast.csv']
-            for csv in csv_files:
-                if os.path.isfile(os.path.join(folder_path, csv)):
-                    os.remove(os.path.join(folder_path, csv))
+            # csv_files = ['Weekly_forecast.csv', 'Monthly_forecast.csv', 
+            #              'Yearly_forecast.csv', 'Daily_forecast.csv',
+            #              'Hourly_forecast.csv', 'Quarterly_forecast.csv']
+            # for csv in csv_files:
+            #     if os.path.isfile(os.path.join(folder_path, csv)):
+            #         os.remove(os.path.join(folder_path, csv))
         else:
             print('After all 6 tasks are finished, you can calculate the averaged index')
 

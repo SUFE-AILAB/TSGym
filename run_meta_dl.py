@@ -86,14 +86,17 @@ class Meta():
         if arg_add_transformer:
             file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
                                   os.listdir(os.path.join(result_path_transformer, dataset)) for dataset in datasets}
-        elif arg_add_LLM:
-            file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
-                                  os.listdir(os.path.join(result_path_LLM, dataset)) for dataset in datasets}
-        elif arg_add_TSFM:
-            file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
-                                  os.listdir(os.path.join(result_path_TSFM, dataset)) for dataset in datasets}
         else:
             file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) for dataset in datasets}
+        
+        if arg_add_LLM:
+            file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
+                                  os.listdir(os.path.join(result_path_transformer, dataset)) + \
+                                  os.listdir(os.path.join(result_path_LLM, dataset)) for dataset in datasets}
+        if arg_add_TSFM:
+            file_dict = {dataset: os.listdir(os.path.join(result_path_non_transformer, dataset)) +\
+                                  os.listdir(os.path.join(result_path_transformer, dataset)) + \
+                                  os.listdir(os.path.join(result_path_TSFM, dataset)) for dataset in datasets}
         
         if arg_all_periods:
             file_dict_test = file_dict.copy()
@@ -169,15 +172,19 @@ class Meta():
         if arg_add_transformer:
             with open(components_add_Transformer_path, 'r') as f:
                 self.components = yaml.safe_load(f)
-        elif arg_add_LLM:
-            with open(components_add_LLM_path, 'r') as f:
-                self.components = yaml.safe_load(f)
-        elif arg_add_TSFM:
-            with open(components_add_TSFM_path, 'r') as f:
-                self.components = yaml.safe_load(f)
         else:
             with open(components_path, 'r') as f:
                 self.components = yaml.safe_load(f)
+        
+        if arg_add_LLM:
+            with open(components_add_LLM_path, 'r') as f:
+                self.components = yaml.safe_load(f)
+        if arg_add_TSFM:
+            with open(components_add_TSFM_path, 'r') as f:
+                self.components = yaml.safe_load(f)
+
+        if self.arg_all_periods:
+            self.components['gym_pl'] = ['24', '36', '48', '60'] + ['96', '192', '336', '720']
         self.components = {k: {kk:vv for kk, vv in zip(v, preprocessing.LabelEncoder().fit_transform(v))} for k,v in self.components.items()}
 
         # load result, metrics: mae(√), mse, rmse, mape, mspe
@@ -242,6 +249,7 @@ class Meta():
                                    re.search(r'lf([^_]+)', k_HP).group(1),
                                    re.search(r'_lr([\d.]+)_', k_HP).group(1),
                                    re.search(r'lrs([^_]+)', k_HP).group(1)]
+            if self.arg_all_periods: current_components = current_components + [re.search(r'_pl(\d+)_', k_HP).group(1)]
             assert len(current_components) == len(self.components)
             current_components = {list(self.components.keys())[i]: v for i, v in enumerate(current_components)}
             try:
@@ -271,6 +279,7 @@ class Meta():
                                    re.search(r'lf([^_]+)', k_HP).group(1),
                                    re.search(r'_lr([\d.]+)_', k_HP).group(1),
                                    re.search(r'lrs([^_]+)', k_HP).group(1)]
+            if self.arg_all_periods: current_components = current_components + [re.search(r'_pl(\d+)_', k_HP).group(1)]
             assert len(current_components) == len(self.components)
             current_components = {list(self.components.keys())[i]: v for i, v in enumerate(current_components)}
             current_components = [self.components[k][v] for k, v in current_components.items()]
@@ -463,13 +472,13 @@ logging.basicConfig(filename=f'meta/logfiles/meta.log', filemode='a', format='%(
 logger = logging.getLogger()
 
 meta = Meta(); task_name = 'LTF'
-arg_component_balance, arg_add_transformer, arg_add_LLM, arg_add_TSFM, arg_all_periods = False, False, True, False, False
-# if arg_add_LLM or arg_add_TSFM:
-#     datasets = ['ETTh1', 'ETTh2', 'Exchange', 'ili']
-# else:
-#     datasets = sorted([_ for _ in os.listdir('./results_long_term_forecasting/resultsGym_non_transformer')])
+arg_component_balance, arg_add_transformer, arg_add_LLM, arg_add_TSFM, arg_all_periods = False, True, False, True, False
+if arg_add_LLM or arg_add_TSFM:
+    datasets = ['ETTh1', 'ETTh2', 'Exchange', 'ili']
+else:
+    datasets = sorted([_ for _ in os.listdir('./results_long_term_forecasting/resultsGym_non_transformer')])
 
-datasets = ['ETTh1', 'ETTh2', 'Exchange', 'ili']
+# datasets = ['ETTh1', 'ETTh2', 'Exchange', 'ili']
 
 for test_dataset in datasets:
     for pred_len_1, pred_len_2 in zip([96, 192, 336, 720], [24, 36, 48, 60]):
