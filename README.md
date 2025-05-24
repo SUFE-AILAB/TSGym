@@ -10,7 +10,7 @@ Based on meta-learning method, TSGym enables the creation of more effective solu
 ## Design Dimensions
 ![Framework](Paper/Framework.png)
 ✅TSGym decouples existing SOTA methods according to the standard **Pipeline** of MTSF modeling.\
-✅TSGym significantly expands the diversity of the modeling pipeline and structures each pipeline step according to distinct **Design Dimensions** (see the following Table).
+✅TSGym significantly expands the diversity of the modeling pipeline and structures each pipeline step according to distinct **Design Dimensions** (see the following Table).\
 ✅TSGym automatically constructs DL-based time-series forecasting model by specified **Design Choices** via meta-learning, *achieving significantly better performance* compared to current SOTA solutions in both short-/long-term forecasting tasks.
 
 
