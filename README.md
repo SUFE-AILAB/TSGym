@@ -4,7 +4,7 @@ TSGym is a novel automated MTSF (multivariate time series forecasting) solution,
 Based on meta-learning method, TSGym enables the creation of more effective solutions tailored to diverse time series data or forecasting task.
 
 ### Updates
-🚩2025.8: The paper revised in response to reviewer comments is publicly available on GitHub, enabling reviewers and the broader community to access the latest version at any time.
+% 🚩2025.8: The paper revised in response to reviewer comments is publicly available on GitHub, enabling reviewers and the broader community to access the latest version at any time.
 
 🚩2025.5: The code for all experiments in our paper is open-sourced on GitHub. We plan to release all code scripts and full details of the paper.
 
